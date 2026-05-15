@@ -1,0 +1,756 @@
+// Gym Clothing & Accessories RMS — Phase 2 schema
+// PostgreSQL / Supabase compatible. Use migrations only (no db-specific hacks).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Staff & access (JWT + refresh tokens; RBAC in middleware)
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  ADMIN
+  CASHIER
+  INVENTORY_MANAGER
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  name         String?
+  role         UserRole  @default(CASHIER)
+  isActive     Boolean   @default(true) @map("is_active")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  refreshTokens            RefreshToken[]
+  inventoryLogsCreated   InventoryLog[] @relation("InventoryLogCreatedBy")
+  ordersCreated          Order[]        @relation("OrderCreatedBy")
+  purchaseOrdersCreated  PurchaseOrder[] @relation("PurchaseOrderCreatedBy")
+  stockAdjustmentsCreated StockAdjustment[] @relation("StockAdjustmentCreatedBy")
+  notifications          Notification[]
+
+  @@map("users")
+}
+
+/// Opaque refresh tokens are stored hashed (SHA-256). Plain token is only returned at login/refresh.
+model RefreshToken {
+  id         String    @id @default(cuid())
+  userId     String    @map("user_id")
+  tokenHash  String    @unique @map("token_hash")
+  expiresAt  DateTime  @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
+  userAgent  String?   @map("user_agent")
+  ipAddress  String?   @map("ip_address")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// Catalog: categories, colors, sizes, products, variants, media
+// ---------------------------------------------------------------------------
+
+model Category {
+  id          String     @id @default(cuid())
+  name        String
+  slug        String     @unique
+  description String?
+  parentId    String?    @map("parent_id")
+  sortOrder   Int        @default(0) @map("sort_order")
+  isActive    Boolean    @default(true) @map("is_active")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  parent   Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryHierarchy")
+  products Product[]
+
+  @@index([parentId])
+  @@map("categories")
+}
+
+model Color {
+  id        String   @id @default(cuid())
+  name      String
+  hexCode   String?  @map("hex_code")
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  variants ProductVariant[]
+
+  @@unique([name])
+  @@map("colors")
+}
+
+model Size {
+  id        String   @id @default(cuid())
+  label     String
+  code      String   @unique
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  variants ProductVariant[]
+
+  @@map("sizes")
+}
+
+enum ProductKind {
+  APPAREL
+  ACCESSORY
+}
+
+enum ProductGender {
+  MENS
+  WOMENS
+  UNISEX
+  KIDS
+  NOT_APPLICABLE
+}
+
+enum GstPricingMode {
+  INCLUSIVE
+  EXCLUSIVE
+}
+
+model Product {
+  id          String        @id @default(cuid())
+  name        String
+  slug        String        @unique
+  description String?
+  brand       String?
+  kind        ProductKind
+  gender      ProductGender @default(UNISEX)
+  hsnCode     String?       @map("hsn_code")
+  fitNotes    String?       @map("fit_notes")
+  categoryId  String        @map("category_id")
+  isActive    Boolean       @default(true) @map("is_active")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  category Category         @relation(fields: [categoryId], references: [id])
+  images   ProductImage[]
+  variants ProductVariant[]
+  offerProducts OfferProduct[]
+
+  @@index([categoryId])
+  @@index([kind, isActive])
+  @@index([gender])
+  @@map("products")
+}
+
+model ProductImage {
+  id         String   @id @default(cuid())
+  productId  String   @map("product_id")
+  url        String
+  altText    String?  @map("alt_text")
+  sortOrder  Int      @default(0) @map("sort_order")
+  isPrimary  Boolean  @default(false) @map("is_primary")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, sortOrder])
+  @@map("product_images")
+}
+
+model ProductVariant {
+  id         String   @id @default(cuid())
+  productId  String   @map("product_id")
+  sku        String   @unique
+  barcode    String?  @unique
+  listPrice  Decimal  @default(0) @map("list_price") @db.Decimal(12, 2)
+  costPrice  Decimal? @map("cost_price") @db.Decimal(12, 2)
+  gstEnabled Boolean  @default(true) @map("gst_enabled")
+  gstPricingMode GstPricingMode @default(INCLUSIVE) @map("gst_pricing_mode")
+  cgstRate   Decimal  @default(0) @map("cgst_rate") @db.Decimal(6, 3)
+  sgstRate   Decimal  @default(0) @map("sgst_rate") @db.Decimal(6, 3)
+  igstRate   Decimal  @default(0) @map("igst_rate") @db.Decimal(6, 3)
+  lowStockThreshold Int? @map("low_stock_threshold")
+  colorId    String?  @map("color_id")
+  sizeId     String?  @map("size_id")
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  product   Product   @relation(fields: [productId], references: [id], onDelete: Restrict)
+  color     Color?    @relation(fields: [colorId], references: [id], onDelete: Restrict)
+  size      Size?     @relation(fields: [sizeId], references: [id], onDelete: Restrict)
+  inventory InventoryBalance?
+  logs      InventoryLog[]
+  orderItems           OrderItem[]
+  purchaseOrderItems   PurchaseOrderItem[]
+  stockAdjustmentLines StockAdjustmentLine[]
+
+  @@index([productId])
+  @@index([colorId])
+  @@index([sizeId])
+  @@map("product_variants")
+}
+
+// ---------------------------------------------------------------------------
+// Inventory: authoritative balance row + append-only logs (mandatory)
+// ---------------------------------------------------------------------------
+
+model InventoryBalance {
+  variantId String   @id @map("variant_id")
+  quantity  Int      @default(0)
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+
+  @@map("inventory_balances")
+}
+
+enum InventoryMovementType {
+  SALE_OUT
+  SALE_REVERSAL_IN
+  PURCHASE_IN
+  RETURN_RESTOCK_IN
+  EXCHANGE_OUT
+  EXCHANGE_IN
+  ADJUSTMENT_IN
+  ADJUSTMENT_OUT
+  DAMAGE_OUT
+}
+
+enum InventoryReferenceKind {
+  ORDER
+  PURCHASE_ORDER
+  SALES_RETURN
+  EXCHANGE
+  STOCK_ADJUSTMENT
+}
+
+model InventoryLog {
+  id              String                   @id @default(cuid())
+  variantId       String                   @map("variant_id")
+  quantityDelta   Int                      @map("quantity_delta")
+  movementType    InventoryMovementType    @map("movement_type")
+  referenceKind   InventoryReferenceKind   @map("reference_kind")
+  referenceId     String                   @map("reference_id")
+  note            String?
+  metadata        Json?
+  createdById     String?                  @map("created_by_id")
+  createdAt       DateTime                 @default(now()) @map("created_at")
+
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  createdBy User?          @relation("InventoryLogCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([variantId, createdAt(sort: Desc)])
+  @@index([referenceKind, referenceId])
+  @@index([createdAt(sort: Desc)])
+  @@map("inventory_logs")
+}
+
+enum StockAdjustmentReason {
+  DAMAGE
+  SHRINKAGE
+  FOUND
+  CORRECTION
+  OTHER
+}
+
+model StockAdjustment {
+  id          String                 @id @default(cuid())
+  reason      StockAdjustmentReason
+  note        String?
+  createdById String?                @map("created_by_id")
+  createdAt   DateTime               @default(now()) @map("created_at")
+
+  createdBy User? @relation("StockAdjustmentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  lines       StockAdjustmentLine[]
+
+  @@index([createdAt(sort: Desc)])
+  @@map("stock_adjustments")
+}
+
+/// One stock adjustment document can move multiple variants; each line maps to one inventory log row.
+model StockAdjustmentLine {
+  id                String                @id @default(cuid())
+  stockAdjustmentId String              @map("stock_adjustment_id")
+  variantId         String              @map("variant_id")
+  quantityDelta     Int                 @map("quantity_delta")
+  movementType      InventoryMovementType @map("movement_type")
+  createdAt         DateTime            @default(now()) @map("created_at")
+
+  stockAdjustment StockAdjustment @relation(fields: [stockAdjustmentId], references: [id], onDelete: Cascade)
+  variant         ProductVariant  @relation(fields: [variantId], references: [id], onDelete: Restrict)
+
+  @@index([stockAdjustmentId])
+  @@index([variantId])
+  @@map("stock_adjustment_lines")
+}
+
+// ---------------------------------------------------------------------------
+// CRM: customers
+// ---------------------------------------------------------------------------
+
+model Customer {
+  id                 String    @id @default(cuid())
+  phone              String?   @unique
+  email              String?   @unique
+  fullName           String    @map("full_name")
+  notes              String?
+  preferredCategories Json?    @map("preferred_categories")
+  preferredSizes      Json?     @map("preferred_sizes")
+  marketingOptIn      Boolean   @default(false) @map("marketing_opt_in")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  orders       Order[]
+  whatsappLogs WhatsAppLog[]
+
+  @@index([fullName])
+  @@map("customers")
+}
+
+// ---------------------------------------------------------------------------
+// Suppliers & purchasing
+// ---------------------------------------------------------------------------
+
+model Supplier {
+  id        String   @id @default(cuid())
+  name      String
+  phone     String?
+  email     String?
+  address   Json?
+  notes     String?
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  purchaseOrders PurchaseOrder[]
+
+  @@index([name])
+  @@map("suppliers")
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  ORDERED
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELLED
+}
+
+model PurchaseOrder {
+  id           String                @id @default(cuid())
+  supplierId   String                @map("supplier_id")
+  status       PurchaseOrderStatus   @default(DRAFT)
+  reference    String?
+  notes        String?
+  subtotal           Decimal           @default(0) @map("subtotal") @db.Decimal(14, 2)
+  discountTotal      Decimal           @default(0) @map("discount_total") @db.Decimal(14, 2)
+  taxableValueTotal  Decimal           @default(0) @map("taxable_value_total") @db.Decimal(14, 2)
+  cgstTotal          Decimal           @default(0) @map("cgst_total") @db.Decimal(14, 2)
+  sgstTotal          Decimal           @default(0) @map("sgst_total") @db.Decimal(14, 2)
+  igstTotal          Decimal           @default(0) @map("igst_total") @db.Decimal(14, 2)
+  grandTotal         Decimal           @default(0) @map("grand_total") @db.Decimal(14, 2)
+  amountPaid         Decimal           @default(0) @map("amount_paid") @db.Decimal(14, 2)
+  orderedAt    DateTime?             @map("ordered_at")
+  receivedAt   DateTime?             @map("received_at")
+  createdById  String?               @map("created_by_id")
+  createdAt    DateTime              @default(now()) @map("created_at")
+  updatedAt    DateTime              @updatedAt @map("updated_at")
+
+  supplier  Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  createdBy User?    @relation("PurchaseOrderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  items     PurchaseOrderItem[]
+
+  @@index([supplierId, status])
+  @@index([createdAt(sort: Desc)])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id                String   @id @default(cuid())
+  purchaseOrderId   String   @map("purchase_order_id")
+  variantId         String   @map("variant_id")
+  quantityOrdered   Int      @map("quantity_ordered")
+  quantityReceived  Int      @default(0) @map("quantity_received")
+  /// Unit cost as entered in the purchase grid (GST inclusive or exclusive per `gstPricingMode`).
+  unitCost          Decimal  @map("unit_cost") @db.Decimal(14, 4)
+  gstEnabled        Boolean  @default(true) @map("gst_enabled")
+  gstPricingMode    GstPricingMode @default(EXCLUSIVE) @map("gst_pricing_mode")
+  cgstRate          Decimal  @default(0) @map("cgst_rate") @db.Decimal(6, 3)
+  sgstRate          Decimal  @default(0) @map("sgst_rate") @db.Decimal(6, 3)
+  igstRate          Decimal  @default(0) @map("igst_rate") @db.Decimal(6, 3)
+  lineDiscount      Decimal  @default(0) @map("line_discount") @db.Decimal(14, 4)
+  taxableValue      Decimal  @default(0) @map("taxable_value") @db.Decimal(14, 4)
+  cgstAmount        Decimal  @default(0) @map("cgst_amount") @db.Decimal(14, 4)
+  sgstAmount        Decimal  @default(0) @map("sgst_amount") @db.Decimal(14, 4)
+  igstAmount        Decimal  @default(0) @map("igst_amount") @db.Decimal(14, 4)
+  lineTotal         Decimal  @default(0) @map("line_total") @db.Decimal(14, 4)
+  /// Per-unit pre-tax cost (for WAC / COGS); equals line taxable / qty.
+  unitCostExclusive Decimal  @map("unit_cost_exclusive") @db.Decimal(14, 6)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  purchaseOrder PurchaseOrder  @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  variant       ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+
+  @@index([purchaseOrderId])
+  @@index([variantId])
+  @@map("purchase_order_items")
+}
+
+// ---------------------------------------------------------------------------
+// Commercial: orders, lines, payments, offers
+// ---------------------------------------------------------------------------
+
+/// Single-row counter used inside billing transactions to allocate unique invoice numbers.
+model InvoiceSequence {
+  id        String   @id @default("singleton")
+  nextSeq   Int      @default(0) @map("next_seq")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("invoice_sequence")
+}
+
+enum OrderDocumentType {
+  SALE
+  CREDIT_NOTE
+}
+
+enum OrderStatus {
+  DRAFT
+  CONFIRMED
+  VOIDED
+}
+
+/// Item- and cart-level POS discounts (aligned with offer engine semantics).
+enum RetailDiscountType {
+  PERCENT
+  FLAT_AMOUNT
+}
+
+model Order {
+  id                 String            @id @default(cuid())
+  documentType       OrderDocumentType @default(SALE) @map("document_type")
+  status             OrderStatus       @default(DRAFT)
+  invoiceNumber      String?           @unique @map("invoice_number")
+  customerId         String?           @map("customer_id")
+  /// True when a POS sale has no linked CRM customer (anonymous checkout).
+  isWalkIn           Boolean           @default(false) @map("is_walk_in")
+  originalSaleId   String?           @map("original_sale_id")
+  gstEnabled         Boolean           @default(false) @map("gst_enabled")
+  gstPricingMode     GstPricingMode    @default(INCLUSIVE) @map("gst_pricing_mode")
+  currency           String            @default("INR")
+  subtotal           Decimal           @db.Decimal(14, 2)
+  discountTotal      Decimal           @default(0) @map("discount_total") @db.Decimal(14, 2)
+  itemDiscountTotal  Decimal           @default(0) @map("item_discount_total") @db.Decimal(14, 2)
+  cartDiscountType   RetailDiscountType? @map("cart_discount_type")
+  cartDiscountValue  Decimal?          @map("cart_discount_value") @db.Decimal(14, 4)
+  cartDiscountAmount Decimal           @default(0) @map("cart_discount_amount") @db.Decimal(14, 2)
+  taxableValue       Decimal           @default(0) @map("taxable_value") @db.Decimal(14, 2)
+  cgstTotal          Decimal           @default(0) @map("cgst_total") @db.Decimal(14, 2)
+  sgstTotal          Decimal           @default(0) @map("sgst_total") @db.Decimal(14, 2)
+  igstTotal          Decimal           @default(0) @map("igst_total") @db.Decimal(14, 2)
+  cessTotal          Decimal           @default(0) @map("cess_total") @db.Decimal(14, 2)
+  grandTotal         Decimal           @map("grand_total") @db.Decimal(14, 2)
+  roundingAdjustment Decimal           @default(0) @map("rounding_adjustment") @db.Decimal(14, 2)
+  notes              String?
+  idempotencyKey     String?           @unique @map("idempotency_key")
+  createdById        String?           @map("created_by_id")
+  confirmedAt        DateTime?         @map("confirmed_at")
+  voidedAt           DateTime?         @map("voided_at")
+  createdAt          DateTime          @default(now()) @map("created_at")
+  updatedAt          DateTime          @updatedAt @map("updated_at")
+
+  customer       Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  originalSale   Order?    @relation("CreditNoteToSale", fields: [originalSaleId], references: [id], onDelete: Restrict)
+  creditNotes    Order[]   @relation("CreditNoteToSale")
+  createdBy      User?     @relation("OrderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  offerId        String?   @map("offer_id")
+  offer          Offer?    @relation(fields: [offerId], references: [id], onDelete: SetNull)
+
+  items            OrderItem[]
+  payments         Payment[]
+  salesReturns     SalesReturn[]
+  exchangesOrig    Exchange[] @relation("ExchangeOriginalOrder")
+  exchangesNew     Exchange[] @relation("ExchangeNewOrder")
+  whatsappLogs     WhatsAppLog[]
+
+  @@index([documentType, status, createdAt(sort: Desc)])
+  @@index([customerId, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+  @@index([confirmedAt(sort: Desc)])
+  @@index([originalSaleId])
+  @@map("orders")
+}
+
+model OrderItem {
+  id                 String   @id @default(cuid())
+  orderId            String   @map("order_id")
+  variantId          String   @map("variant_id")
+  quantity           Int
+  unitPrice          Decimal  @map("unit_price") @db.Decimal(14, 4)
+  itemDiscountType      RetailDiscountType? @map("item_discount_type")
+  itemDiscountValue     Decimal?            @map("item_discount_value") @db.Decimal(14, 4)
+  itemDiscountAmount    Decimal             @default(0) @map("item_discount_amount") @db.Decimal(14, 4)
+  cartDiscountAllocated Decimal             @default(0) @map("cart_discount_allocated") @db.Decimal(14, 4)
+  lineDiscount       Decimal  @default(0) @map("line_discount") @db.Decimal(14, 4)
+  taxableValue       Decimal  @map("taxable_value") @db.Decimal(14, 4)
+  cgstRate           Decimal  @default(0) @map("cgst_rate") @db.Decimal(6, 3)
+  sgstRate           Decimal  @default(0) @map("sgst_rate") @db.Decimal(6, 3)
+  igstRate           Decimal  @default(0) @map("igst_rate") @db.Decimal(6, 3)
+  cgstAmount         Decimal  @default(0) @map("cgst_amount") @db.Decimal(14, 4)
+  sgstAmount         Decimal  @default(0) @map("sgst_amount") @db.Decimal(14, 4)
+  igstAmount         Decimal  @default(0) @map("igst_amount") @db.Decimal(14, 4)
+  lineTotal          Decimal  @map("line_total") @db.Decimal(14, 4)
+  sourceOrderItemId  String?  @map("source_order_item_id")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  order           Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variant         ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  sourceLine      OrderItem?     @relation("OrderItemProvenance", fields: [sourceOrderItemId], references: [id], onDelete: SetNull)
+  derivedLines    OrderItem[]    @relation("OrderItemProvenance")
+  salesReturnLines SalesReturnLine[]
+
+  @@index([orderId])
+  @@index([variantId, createdAt(sort: Desc)])
+  @@index([sourceOrderItemId])
+  @@map("order_items")
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  UPI
+  BANK_TRANSFER
+  WALLET
+  OTHER
+}
+
+enum PaymentNature {
+  RECEIPT
+  REFUND
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+model Payment {
+  id               String        @id @default(cuid())
+  orderId          String        @map("order_id")
+  nature           PaymentNature @default(RECEIPT)
+  method           PaymentMethod
+  amount           Decimal       @db.Decimal(14, 2)
+  status           PaymentStatus @default(COMPLETED)
+  externalRef      String?       @map("external_ref")
+  reconciledAt     DateTime?     @map("reconciled_at")
+  metadata         Json?
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@index([orderId, nature])
+  @@index([createdAt(sort: Desc)])
+  @@map("payments")
+}
+
+enum OfferDiscountType {
+  PERCENT
+  FIXED_AMOUNT
+}
+
+model Offer {
+  id             String            @id @default(cuid())
+  code           String?           @unique
+  name           String
+  description    String?
+  discountType   OfferDiscountType @map("discount_type")
+  discountValue  Decimal           @map("discount_value") @db.Decimal(14, 4)
+  minOrderValue  Decimal?          @map("min_order_value") @db.Decimal(14, 2)
+  maxDiscount    Decimal?          @map("max_discount") @db.Decimal(14, 2)
+  startsAt       DateTime?         @map("starts_at")
+  endsAt         DateTime?         @map("ends_at")
+  isStackable    Boolean           @default(false) @map("is_stackable")
+  isActive       Boolean           @default(true) @map("is_active")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+
+  products OfferProduct[]
+  orders   Order[]
+
+  @@index([isActive, startsAt, endsAt])
+  @@map("offers")
+}
+
+enum OfferScope {
+  PRODUCT
+}
+
+model OfferProduct {
+  offerId   String @map("offer_id")
+  productId String @map("product_id")
+
+  offer   Offer   @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([offerId, productId])
+  @@map("offer_products")
+}
+
+// ---------------------------------------------------------------------------
+// Returns & exchanges
+// ---------------------------------------------------------------------------
+
+enum SalesReturnStatus {
+  REQUESTED
+  APPROVED
+  COMPLETED
+  REJECTED
+  CANCELLED
+}
+
+enum ReturnDisposition {
+  RESTOCK
+  NO_RESTOCK
+}
+
+model SalesReturn {
+  id          String            @id @default(cuid())
+  orderId     String            @map("order_id")
+  status      SalesReturnStatus @default(REQUESTED)
+  reason      String?
+  notes       String?
+  completedAt DateTime?         @map("completed_at")
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+
+  order  Order             @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  lines  SalesReturnLine[]
+  exchange Exchange?
+
+  @@index([orderId, status])
+  @@index([createdAt(sort: Desc)])
+  @@map("sales_returns")
+}
+
+model SalesReturnLine {
+  id              String            @id @default(cuid())
+  salesReturnId   String            @map("sales_return_id")
+  orderItemId     String            @map("order_item_id")
+  quantity        Int
+  disposition     ReturnDisposition
+  createdAt       DateTime          @default(now()) @map("created_at")
+
+  salesReturn SalesReturn  @relation(fields: [salesReturnId], references: [id], onDelete: Cascade)
+  orderItem   OrderItem    @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+
+  @@index([salesReturnId])
+  @@index([orderItemId])
+  @@map("sales_return_lines")
+}
+
+enum ExchangeStatus {
+  OPEN
+  AWAITING_PAYMENT
+  COMPLETED
+  CANCELLED
+}
+
+model Exchange {
+  id               String         @id @default(cuid())
+  originalOrderId  String         @map("original_order_id")
+  newOrderId       String?        @map("new_order_id")
+  salesReturnId    String?        @unique @map("sales_return_id")
+  status           ExchangeStatus @default(OPEN)
+  notes            String?
+  completedAt      DateTime?      @map("completed_at")
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+
+  originalOrder Order        @relation("ExchangeOriginalOrder", fields: [originalOrderId], references: [id], onDelete: Restrict)
+  newOrder      Order?       @relation("ExchangeNewOrder", fields: [newOrderId], references: [id], onDelete: SetNull)
+  salesReturn   SalesReturn? @relation(fields: [salesReturnId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt(sort: Desc)])
+  @@map("exchanges")
+}
+
+// ---------------------------------------------------------------------------
+// Notifications & WhatsApp
+// ---------------------------------------------------------------------------
+
+enum NotificationChannel {
+  IN_APP
+}
+
+enum NotificationStatus {
+  UNREAD
+  READ
+}
+
+model Notification {
+  id        String               @id @default(cuid())
+  userId    String               @map("user_id")
+  channel   NotificationChannel  @default(IN_APP)
+  status    NotificationStatus   @default(UNREAD)
+  title     String
+  body      String
+  data      Json?
+  readAt    DateTime?            @map("read_at")
+  createdAt DateTime             @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, createdAt(sort: Desc)])
+  @@map("notifications")
+}
+
+enum WhatsAppMessageStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+model WhatsAppLog {
+  id                 String                  @id @default(cuid())
+  customerId         String?                 @map("customer_id")
+  orderId            String?                 @map("order_id")
+  templateName       String?                 @map("template_name")
+  toPhone            String                  @map("to_phone")
+  payload            Json?
+  providerMessageId String?                 @map("provider_message_id")
+  status             WhatsAppMessageStatus   @default(QUEUED)
+  errorCode          String?                 @map("error_code")
+  errorDetail        String?                 @map("error_detail")
+  sentAt             DateTime?               @map("sent_at")
+  deliveredAt        DateTime?               @map("delivered_at")
+  readAt             DateTime?               @map("read_at")
+  createdAt          DateTime                @default(now()) @map("created_at")
+  updatedAt          DateTime                @updatedAt @map("updated_at")
+
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  order    Order?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([customerId, createdAt(sort: Desc)])
+  @@index([orderId])
+  @@index([status, createdAt(sort: Desc)])
+  @@index([providerMessageId])
+  @@map("whatsapp_logs")
+}

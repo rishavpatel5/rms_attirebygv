@@ -1,0 +1,26 @@
+{
+  "name": "attirebygv-rms",
+  "private": true,
+  "packageManager": "npm@10.9.0",
+  "engines": {
+    "node": ">=20.16.0"
+  },
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,green \"npm run dev -w @rms/api\" \"npm run dev -w @rms/web\"",
+    "build": "npm run build -w @rms/api && npm run build -w @rms/web",
+    "lint": "npm run lint -w @rms/api && npm run lint -w @rms/web",
+    "db:generate": "npm run db:generate -w @rms/api",
+    "db:migrate": "npm run db:migrate -w @rms/api",
+    "db:studio": "npm run db:studio -w @rms/api",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f postgres"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

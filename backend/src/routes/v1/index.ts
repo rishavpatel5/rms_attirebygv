@@ -1,0 +1,24 @@
+import { Router } from "express";
+import { analyticsRouter } from "./analytics.routes.js";
+import { authRouter } from "./auth.routes.js";
+import { billingRouter } from "./billing.routes.js";
+import { catalogRouter } from "./catalog.routes.js";
+import { customersRouter } from "./customers.routes.js";
+import { healthRouter } from "./health.routes.js";
+import { inventoryRouter } from "./inventory.routes.js";
+import { offersRouter } from "./offers.routes.js";
+import { purchasesRouter } from "./purchases.routes.js";
+import { suppliersRouter } from "./suppliers.routes.js";
+
+export const v1Router = Router();
+
+v1Router.use("/auth", authRouter);
+v1Router.use("/analytics", analyticsRouter);
+v1Router.use("/billing", billingRouter);
+v1Router.use("/catalog", catalogRouter);
+v1Router.use("/customers", customersRouter);
+v1Router.use("/inventory", inventoryRouter);
+v1Router.use("/offers", offersRouter);
+v1Router.use("/purchases", purchasesRouter);
+v1Router.use("/suppliers", suppliersRouter);
+v1Router.use(healthRouter);

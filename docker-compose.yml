@@ -1,0 +1,29 @@
+# Attire RMS — local PostgreSQL only (this project).
+# From repo root: npm run docker:up
+# Stop: npm run docker:down
+#
+# If port 5432 is already taken, change "5432:5432" below to e.g. "55432:5432"
+# and set DATABASE_URL in backend/.env to use that host port.
+
+name: attirebygv-rms
+
+services:
+  postgres:
+    build:
+      context: ./docker/postgres
+      dockerfile: Dockerfile
+    image: attirebygv-rms-postgres:local
+    container_name: attirebygv-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: rms
+      POSTGRES_PASSWORD: rms_local_dev
+      POSTGRES_DB: rms_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - attirebygv_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  attirebygv_postgres_data:
+    name: attirebygv_postgres_data
