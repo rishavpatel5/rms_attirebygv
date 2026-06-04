@@ -12,8 +12,9 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY backend/package.json ./backend/
 COPY frontend/package.json ./frontend/
-# Frontend build needs no native modules — skip install scripts for a faster build.
-RUN npm ci --ignore-scripts
+# Must run full install (no --ignore-scripts): Vite/Rollup needs the Linux
+# optional native package @rollup/rollup-linux-x64-gnu on this image.
+RUN npm ci
 COPY frontend ./frontend
 # Build-time public config (Railway injects these as build args).
 ARG VITE_API_URL
