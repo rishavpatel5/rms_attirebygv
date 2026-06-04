@@ -12,9 +12,10 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY backend/package.json ./backend/
 COPY frontend/package.json ./frontend/
-# Must run full install (no --ignore-scripts): Vite/Rollup needs the Linux
-# optional native package @rollup/rollup-linux-x64-gnu on this image.
-RUN npm ci
+# Install deps (lockfile may have been generated on Windows/macOS).
+RUN npm ci --include=optional
+# npm ci can skip Linux-only optional deps; Vite/Rollup needs this on Railway.
+RUN npm install @rollup/rollup-linux-x64-gnu --cpu=x64 --os=linux --no-save
 COPY frontend ./frontend
 # Build-time public config (Railway injects these as build args).
 ARG VITE_API_URL
