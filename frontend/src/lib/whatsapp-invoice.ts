@@ -44,9 +44,13 @@ export function formatInvoiceAmount(value: string | number): string {
  * link later is a pure config change.
  */
 export function buildInvoiceLink(orderId: string): string | null {
-  const base = import.meta.env.VITE_PUBLIC_INVOICE_BASE_URL as string | undefined;
-  if (!base) return null;
-  return `${base.replace(/\/$/, "")}/i/${encodeURIComponent(orderId)}`;
+  // Prefer explicit public base (often frontend /i/…); else API host serves PDF directly.
+  const base = (
+    import.meta.env.VITE_PUBLIC_INVOICE_BASE_URL ||
+    import.meta.env.VITE_API_URL
+  ) as string | undefined;
+  if (!base?.trim()) return null;
+  return `${base.trim().replace(/\/$/, "")}/i/${encodeURIComponent(orderId)}`;
 }
 
 export type ThankYouMessageInput = {

@@ -7,6 +7,7 @@ import { CustomersPage } from "@/pages/customers-page";
 import { DashboardPage } from "@/pages/dashboard-page";
 import { InventoryPage } from "@/pages/inventory-page";
 import { LoginPage } from "@/pages/login-page";
+import { PublicInvoicePage } from "@/pages/public-invoice-page";
 import { OffersPage } from "@/pages/offers-page";
 import { PurchasesPage } from "@/pages/purchases-page";
 import { ReportsPage } from "@/pages/reports-page";
@@ -14,6 +15,7 @@ import { SettingsPage } from "@/pages/settings-page";
 import { SuppliersPage } from "@/pages/suppliers-page";
 
 const router = createBrowserRouter([
+  { path: "/i/:orderId", element: <PublicInvoicePage /> },
   { path: "/login", element: <LoginPage /> },
   {
     path: "/",
