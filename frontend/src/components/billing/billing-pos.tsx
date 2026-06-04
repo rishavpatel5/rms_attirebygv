@@ -1,5 +1,6 @@
 import {
   Keyboard,
+  MessageCircle,
   Minus,
   Plus,
   Receipt,
@@ -41,6 +42,12 @@ import {
   useBillingStore,
 } from "@/stores/billing-store";
 import { useUiStore } from "@/stores/ui-store";
+import {
+  buildInvoiceLink,
+  buildThankYouMessage,
+  buildWhatsAppShareUrl,
+  normalizeWhatsAppPhone,
+} from "@/lib/whatsapp-invoice";
 
 const money = (n: number) =>
   new Intl.NumberFormat("en-IN", {
@@ -79,6 +86,23 @@ function asMoneyNumber(v: string | number): number {
   return typeof v === "number" ? v : Number(v) || 0;
 }
 
+/** Details of the just-completed sale, used to offer the WhatsApp share button. */
+type LastSale = {
+  orderId: string;
+  invoiceNumber: string | null;
+  amountPaid: string;
+  customerName: string;
+  customerPhone: string;
+};
+
+type InvoiceMetaResponse = {
+  invoice: {
+    invoiceNumber: string | null;
+    totals: { grandTotal: string };
+    customer: { fullName: string | null; phone: string | null } | null;
+  };
+};
+
 export function BillingPos() {
   const searchRef = useRef<HTMLInputElement>(null);
   const barcodeRef = useRef("");
@@ -86,6 +110,7 @@ export function BillingPos() {
   const [catalog, setCatalog] = useState<PosProduct[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [saleMessage, setSaleMessage] = useState<string | null>(null);
+  const [lastSale, setLastSale] = useState<LastSale | null>(null);
 
   const searchQuery = useBillingStore((s) => s.searchQuery);
   const setSearchQuery = useBillingStore((s) => s.setSearchQuery);
@@ -279,6 +304,10 @@ export function BillingPos() {
   async function completeSale() {
     if (lines.length === 0 || !quote) return;
     setSaleMessage(null);
+    setLastSale(null);
+    // Capture customer details before clearCart() resets the POS customer fields.
+    const snapshotName = posCustomerName.trim();
+    const snapshotPhone = posCustomerPhone.trim();
     try {
       const checkoutBody = buildPosCheckoutPayload({
         lines,
@@ -291,13 +320,51 @@ export function BillingPos() {
         posCustomerName,
         posCustomerPhone,
       });
-      await apiPostJsonAuthed("/api/v1/billing/checkout", checkoutBody);
+      const { orderId } = await apiPostJsonAuthed<{ orderId: string }>(
+        "/api/v1/billing/checkout",
+        checkoutBody,
+      );
+
+      let invoiceNumber: string | null = null;
+      let amountPaid = quote.totals.grandTotal;
+      let customerName = snapshotName;
+      let customerPhone = snapshotPhone;
+      // Pull the allocated invoice number / resolved customer for the share message.
+      // Non-fatal: the sale already succeeded if this lookup fails.
+      try {
+        const { invoice } = await apiGetJsonAuthed<InvoiceMetaResponse>(
+          `/api/v1/billing/orders/${encodeURIComponent(orderId)}/invoice?format=json`,
+        );
+        invoiceNumber = invoice.invoiceNumber;
+        amountPaid = invoice.totals.grandTotal;
+        if (invoice.customer) {
+          customerName = invoice.customer.fullName ?? customerName;
+          customerPhone = invoice.customer.phone ?? customerPhone;
+        }
+      } catch {
+        // keep the fallbacks captured above
+      }
+
+      setLastSale({ orderId, invoiceNumber, amountPaid, customerName, customerPhone });
       setSaleMessage("Sale completed. Stock reduced automatically.");
       clearCart();
     } catch (e) {
       setSaleMessage(e instanceof Error ? e.message : "Could not complete sale.");
     }
   }
+
+  const whatsAppShare = useMemo(() => {
+    if (!lastSale) return null;
+    const phone = normalizeWhatsAppPhone(lastSale.customerPhone);
+    if (!phone) return null;
+    const message = buildThankYouMessage({
+      customerName: lastSale.customerName,
+      invoiceNumber: lastSale.invoiceNumber,
+      amountPaid: lastSale.amountPaid,
+      invoiceLink: buildInvoiceLink(lastSale.orderId),
+    });
+    return { href: buildWhatsAppShareUrl(phone, message) };
+  }, [lastSale]);
 
   return (
     <div className="space-y-4 pb-24 lg:pb-8">
@@ -575,6 +642,19 @@ export function BillingPos() {
               </Button>
               {saleMessage ? (
                 <p className="text-xs text-muted-foreground">{saleMessage}</p>
+              ) : null}
+              {whatsAppShare ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full gap-2 rounded-xl border-emerald-500/40 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-950/40"
+                  onClick={() =>
+                    window.open(whatsAppShare.href, "_blank", "noopener,noreferrer")
+                  }
+                >
+                  <MessageCircle className="size-4" />
+                  Share invoice on WhatsApp
+                </Button>
               ) : null}
             </CardContent>
           </Card>
