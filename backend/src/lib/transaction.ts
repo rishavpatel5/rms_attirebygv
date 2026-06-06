@@ -3,7 +3,14 @@ import { prisma } from "./prisma.js";
 
 export type Tx = Prisma.TransactionClient;
 
-const DEFAULT_OPTIONS: Prisma.TransactionOptions = {
+/** Interactive transaction options compatible with Prisma v6.x. */
+type TransactionOptions = {
+  maxWait?: number;
+  timeout?: number;
+  isolationLevel?: Prisma.TransactionIsolationLevel;
+};
+
+const DEFAULT_OPTIONS: TransactionOptions = {
   maxWait: 10_000,
   timeout: 30_000,
 };
@@ -11,7 +18,7 @@ const DEFAULT_OPTIONS: Prisma.TransactionOptions = {
 /** Interactive transaction with sane timeouts (checkout, inventory, billing). */
 export function runInTransaction<T>(
   fn: (tx: Tx) => Promise<T>,
-  options?: Prisma.TransactionOptions,
+  options?: TransactionOptions,
 ): Promise<T> {
   return prisma.$transaction(fn, { ...DEFAULT_OPTIONS, ...options });
 }
