@@ -10,6 +10,7 @@ import {
   SalesReturnStatus,
 } from "@prisma/client";
 import { prisma } from "../../lib/prisma.js";
+import { runInTransaction } from "../../lib/transaction.js";
 import { buildMeta, parsePagination } from "../../lib/pagination.js";
 import { AppError } from "../../middleware/error-handler.js";
 import {
@@ -225,7 +226,7 @@ export async function checkoutPos(input: {
 
   const variantIds = pricing.lines.map((l) => l.variantId);
 
-  return prisma.$transaction(async (tx) => {
+  return runInTransaction(async (tx) => {
     const vmap = await loadActiveVariants(tx, variantIds);
     const productsFromVariants = [...new Set(variantIds.map((id) => vmap.get(id)!.productId))];
     await assertOfferIfPresent(tx, body.offerId ?? null, productsFromVariants);
@@ -290,7 +291,7 @@ export async function createDraftOrder(input: {
 
   const variantIds = pricing.lines.map((l) => l.variantId);
 
-  return prisma.$transaction(async (tx) => {
+  return runInTransaction(async (tx) => {
     const vmap = await loadActiveVariants(tx, variantIds);
     const productsFromVariants = [...new Set(variantIds.map((id) => vmap.get(id)!.productId))];
     await assertOfferIfPresent(tx, body.offerId ?? null, productsFromVariants);
@@ -348,7 +349,7 @@ export async function confirmDraftOrder(input: {
 }): Promise<void> {
   const { orderId, payments, createdById } = input;
 
-  await prisma.$transaction(async (tx) => {
+  await runInTransaction(async (tx) => {
     const order = await tx.order.findUnique({
       where: { id: orderId },
       include: { items: true, payments: true },
@@ -518,7 +519,7 @@ export async function createCreditNote(input: {
     if (existing) return { orderId: existing.id };
   }
 
-  return prisma.$transaction(async (tx) => {
+  return runInTransaction(async (tx) => {
     const sale = await tx.order.findUnique({
       where: { id: body.originalSaleId },
       include: { items: true },
@@ -650,7 +651,7 @@ export async function createExchange(input: {
 }): Promise<{ exchangeId: string; salesReturnId: string; newOrderId: string }> {
   const { body, createdById } = input;
 
-  return prisma.$transaction(async (tx) => {
+  return runInTransaction(async (tx) => {
     const original = await tx.order.findUnique({
       where: { id: body.originalOrderId },
       include: { items: true },
