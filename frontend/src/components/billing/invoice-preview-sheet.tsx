@@ -18,6 +18,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useUiStore } from "@/stores/ui-store";
+import { STORE_LOGO_ALT, STORE_LOGO_PATH } from "@/lib/brand";
 
 const money = (n: number) =>
   new Intl.NumberFormat("en-IN", {
@@ -49,7 +50,14 @@ export function InvoicePreviewSheet() {
         className="flex h-full w-full flex-col sm:max-w-md"
       >
         <SheetHeader>
-          <SheetTitle>Invoice preview</SheetTitle>
+          <div className="flex items-center gap-3">
+            <img
+              src={STORE_LOGO_PATH}
+              alt={STORE_LOGO_ALT}
+              className="h-12 max-w-40 object-contain object-left"
+            />
+            <SheetTitle>Invoice preview</SheetTitle>
+          </div>
           <p className="text-left text-sm text-muted-foreground">
             Draft — server-calculated totals
           </p>

@@ -3,6 +3,7 @@ import { AppSidebar } from "@/components/layout/app-sidebar";
 import { TopBar } from "@/components/layout/top-bar";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { useMediaQuery } from "@/hooks/use-media-query";
+import { STORE_NAME } from "@/lib/brand";
 import { useUiStore } from "@/stores/ui-store";
 
 const titles: Record<string, string> = {
@@ -31,7 +32,7 @@ function titleFromPath(pathname: string) {
   if (pathname.startsWith("/dashboard/offers")) return "Offers & Marketing";
   if (pathname.startsWith("/dashboard/settings")) return "Settings";
   if (pathname.startsWith("/dashboard")) return "Dashboard";
-  return "RMS";
+  return STORE_NAME;
 }
 export function DashboardShell() {
   const location = useLocation();

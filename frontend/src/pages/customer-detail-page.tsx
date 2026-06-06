@@ -2,6 +2,7 @@ import { ArrowLeft, FileText, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { OrderInvoiceSheet } from "@/components/customers/order-invoice-sheet";
+import { ShareInvoiceWhatsAppButton } from "@/components/customers/share-invoice-whatsapp-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -179,7 +180,7 @@ export function CustomerDetailPage() {
         <CardHeader>
           <CardTitle className="text-base">Purchase history</CardTitle>
           <CardDescription>
-            Confirmed sales and credit notes linked to this customer. Click Invoice to view the full bill.
+            Confirmed sales and credit notes linked to this customer. View the bill or share on WhatsApp.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -197,7 +198,7 @@ export function CustomerDetailPage() {
                   <TableHead className="text-right">Lines</TableHead>
                   <TableHead className="text-right">Discount</TableHead>
                   <TableHead className="text-right">Total</TableHead>
-                  <TableHead className="w-[100px]" />
+                  <TableHead className="w-[180px]" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -227,16 +228,26 @@ export function CustomerDetailPage() {
                       {fmtInr(o.grandTotal)}
                     </TableCell>
                     <TableCell>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-8 gap-1 text-xs"
-                        onClick={() => openInvoice(o.id, o.invoiceNumber)}
-                      >
-                        <FileText className="size-3.5" />
-                        Invoice
-                      </Button>
+                      <div className="flex flex-wrap justify-end gap-1.5">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8 gap-1 text-xs"
+                          onClick={() => openInvoice(o.id, o.invoiceNumber)}
+                        >
+                          <FileText className="size-3.5" />
+                          Invoice
+                        </Button>
+                        <ShareInvoiceWhatsAppButton
+                          phone={customer.phone}
+                          customerName={customer.fullName}
+                          orderId={o.id}
+                          invoiceNumber={o.invoiceNumber}
+                          amountPaid={o.grandTotal}
+                          documentType={o.documentType}
+                        />
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

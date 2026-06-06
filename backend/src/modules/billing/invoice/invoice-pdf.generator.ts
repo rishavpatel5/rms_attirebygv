@@ -73,23 +73,28 @@ function renderInvoice(pdf: InstanceType<typeof PDFDocument>, doc: InvoiceDocume
   let y = MARGIN;
 
   // —— Header ——
+  let logoRendered = false;
   if (store.logoPath) {
     try {
-      pdf.image(store.logoPath, MARGIN, y, { width: 56, height: 56, fit: [56, 56] });
+      pdf.image(store.logoPath, MARGIN, y, { width: 120, height: 56, fit: [120, 56] });
+      logoRendered = true;
     } catch {
       /* optional logo */
     }
   }
 
-  const headerX = store.logoPath ? MARGIN + 68 : MARGIN;
-  pdf
-    .font("Helvetica-Bold")
-    .fontSize(16)
-    .fillColor(COLORS.accent)
-    .text(store.name, headerX, y, { width: CONTENT_W - (headerX - MARGIN) });
+  const headerX = logoRendered ? MARGIN + 132 : MARGIN;
+  let hy = y;
+  if (!logoRendered) {
+    pdf
+      .font("Helvetica-Bold")
+      .fontSize(16)
+      .fillColor(COLORS.accent)
+      .text(store.name, headerX, hy, { width: CONTENT_W - (headerX - MARGIN) });
+    hy += 20;
+  }
 
   pdf.font("Helvetica").fontSize(9).fillColor(COLORS.muted);
-  let hy = y + 20;
   if (store.address) {
     pdf.text(store.address, headerX, hy, { width: CONTENT_W - (headerX - MARGIN) });
     hy += 12;

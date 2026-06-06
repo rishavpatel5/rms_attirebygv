@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { apiPostJson, setStoredTokens } from "@/lib/api-client";
+import { STORE_LOGO_ALT, STORE_LOGO_PATH } from "@/lib/brand";
 
 type LoginResponse = {
   user: { id: string; email: string; name: string | null; role: string };
@@ -41,11 +42,13 @@ export function LoginPage() {
   return (
     <div className="flex min-h-dvh items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md border-border/60 shadow-lg">
-        <CardHeader>
+        <CardHeader className="items-center text-center">
+          <img
+            src={STORE_LOGO_PATH}
+            alt={STORE_LOGO_ALT}
+            className="mb-2 h-16 max-w-56 object-contain"
+          />
           <CardTitle className="text-xl tracking-tight">Sign in</CardTitle>
-          <CardDescription>
-            Use an admin or inventory-manager account to manage catalog and stock.
-          </CardDescription>
         </CardHeader>
         <CardContent>
           <form className="space-y-4" onSubmit={onSubmit}>

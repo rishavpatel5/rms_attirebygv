@@ -34,6 +34,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/package.json ./package.json
 COPY --from=deps /app/backend/package.json ./backend/package.json
 COPY --from=deps /app/frontend/package.json ./frontend/package.json
+COPY --from=deps /app/backend/assets ./backend/assets
 COPY --from=deps /app/backend/dist ./backend/dist
 COPY --from=deps /app/backend/prisma ./backend/prisma
 WORKDIR /app/backend

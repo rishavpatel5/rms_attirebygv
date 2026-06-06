@@ -18,6 +18,7 @@ import { NavLink } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { STORE_LOGO_ALT, STORE_LOGO_PATH } from "@/lib/brand";
 import { useUiStore } from "@/stores/ui-store";
 
 type NavItem = {
@@ -119,12 +120,19 @@ export function AppSidebar({ className }: { className?: string }) {
     >
       <div className="flex h-14 shrink-0 items-center border-b border-border px-3">
         {!collapsed ? (
-          <div className="min-w-0 flex-1 pl-0.5">
-            <p className="truncate text-sm font-semibold tracking-tight">Attire RMS</p>
-            <p className="truncate text-[11px] text-muted-foreground">Retail management</p>
+          <div className="min-w-0 flex-1">
+            <img
+              src={STORE_LOGO_PATH}
+              alt={STORE_LOGO_ALT}
+              className="h-10 max-w-[170px] object-contain object-left"
+            />
           </div>
         ) : (
-          <span className="mx-auto text-xs font-bold text-muted-foreground">RMS</span>
+          <img
+            src={STORE_LOGO_PATH}
+            alt={STORE_LOGO_ALT}
+            className="mx-auto size-8 object-contain"
+          />
         )}
         <Button
           type="button"

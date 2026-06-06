@@ -9,7 +9,7 @@
  * route is hosted; the "Download your invoice" line then appears automatically.
  */
 
-const STORE_NAME = "Attire by GV";
+import { STORE_NAME } from "@/lib/brand";
 
 /**
  * Normalize a phone number to wa.me format: country code + number, digits only,
@@ -80,4 +80,23 @@ export function buildThankYouMessage(input: ThankYouMessageInput): string {
 /** Compose the wa.me click-to-chat URL with the message URL-encoded. */
 export function buildWhatsAppShareUrl(phone: string, message: string): string {
   return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+}
+
+/** Pre-filled invoice share link for wa.me, or null when phone is missing/invalid. */
+export function buildInvoiceWhatsAppHref(input: {
+  phone: string | null | undefined;
+  customerName?: string | null;
+  orderId: string;
+  invoiceNumber?: string | null;
+  amountPaid?: string | number | null;
+}): string | null {
+  const phone = normalizeWhatsAppPhone(input.phone);
+  if (!phone) return null;
+  const message = buildThankYouMessage({
+    customerName: input.customerName,
+    invoiceNumber: input.invoiceNumber,
+    amountPaid: input.amountPaid,
+    invoiceLink: buildInvoiceLink(input.orderId),
+  });
+  return buildWhatsAppShareUrl(phone, message);
 }

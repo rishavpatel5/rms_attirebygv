@@ -1,6 +1,7 @@
 import { Loader2 } from "lucide-react";
 import { useEffect } from "react";
 import { useParams } from "react-router-dom";
+import { STORE_LOGO_ALT, STORE_LOGO_PATH } from "@/lib/brand";
 
 /** PDF is always served by the API at GET /i/:orderId */
 function invoiceApiBase(): string | null {
@@ -24,7 +25,8 @@ export function PublicInvoicePage() {
 
   if (!orderId || !api) {
     return (
-      <div className="flex min-h-screen items-center justify-center p-6 text-center text-sm text-muted-foreground">
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-6 text-center text-sm text-muted-foreground">
+        <img src={STORE_LOGO_PATH} alt={STORE_LOGO_ALT} className="h-16 max-w-56 object-contain" />
         Invoice link is not configured. Please contact the store.
       </div>
     );
@@ -32,6 +34,7 @@ export function PublicInvoicePage() {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-3 p-6 text-center">
+      <img src={STORE_LOGO_PATH} alt={STORE_LOGO_ALT} className="h-16 max-w-56 object-contain" />
       <Loader2 className="size-8 animate-spin text-muted-foreground" />
       <p className="text-sm text-muted-foreground">Opening your invoice…</p>
     </div>

@@ -63,8 +63,41 @@ const envSchema = z
 
 export type Env = z.infer<typeof envSchema>;
 
+/**
+ * Prisma interactive transactions (checkout, stock) need a direct Postgres session.
+ * PgBouncer transaction-mode poolers break `$transaction` unless DIRECT_URL is set.
+ */
+function ensureDirectDatabaseUrl(): void {
+  const db = process.env.DATABASE_URL?.trim();
+  if (!db) return;
+
+  const direct = process.env.DIRECT_URL?.trim();
+  const usesPooler =
+    /pgbouncer=true/i.test(db) ||
+    /:6543\//.test(db) ||
+    /pooler\./i.test(db);
+
+  if (!direct) {
+    if (usesPooler) {
+      throw new Error(
+        "DATABASE_URL uses a connection pooler (PgBouncer). Set DIRECT_URL to a direct/session " +
+          "Postgres URL (port 5432). Checkout and inventory updates require interactive transactions.",
+      );
+    }
+    process.env.DIRECT_URL = db;
+    return;
+  }
+
+  if (usesPooler && direct === db) {
+    throw new Error(
+      "DIRECT_URL must be a direct Postgres connection, not the same PgBouncer URL as DATABASE_URL.",
+    );
+  }
+}
+
 function loadEnv(): Env {
   loadDotenv({ path: envFilePath });
+  ensureDirectDatabaseUrl();
   const parsed = envSchema.safeParse(process.env);
   if (!parsed.success) {
     const message = parsed.error.flatten().fieldErrors;

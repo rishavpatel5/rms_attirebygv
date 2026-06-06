@@ -42,12 +42,7 @@ import {
   useBillingStore,
 } from "@/stores/billing-store";
 import { useUiStore } from "@/stores/ui-store";
-import {
-  buildInvoiceLink,
-  buildThankYouMessage,
-  buildWhatsAppShareUrl,
-  normalizeWhatsAppPhone,
-} from "@/lib/whatsapp-invoice";
+import { buildInvoiceWhatsAppHref } from "@/lib/whatsapp-invoice";
 
 const money = (n: number) =>
   new Intl.NumberFormat("en-IN", {
@@ -355,15 +350,14 @@ export function BillingPos() {
 
   const whatsAppShare = useMemo(() => {
     if (!lastSale) return null;
-    const phone = normalizeWhatsAppPhone(lastSale.customerPhone);
-    if (!phone) return null;
-    const message = buildThankYouMessage({
+    const href = buildInvoiceWhatsAppHref({
+      phone: lastSale.customerPhone,
       customerName: lastSale.customerName,
+      orderId: lastSale.orderId,
       invoiceNumber: lastSale.invoiceNumber,
       amountPaid: lastSale.amountPaid,
-      invoiceLink: buildInvoiceLink(lastSale.orderId),
     });
-    return { href: buildWhatsAppShareUrl(phone, message) };
+    return href ? { href } : null;
   }, [lastSale]);
 
   return (

@@ -3,8 +3,8 @@
 #
 # On Railway: Root Directory = "/" and Dockerfile Path = "frontend/Dockerfile".
 #
-# NOTE: VITE_* values are baked in at BUILD time, not runtime. Pass VITE_API_URL
-# (and optionally VITE_PUBLIC_INVOICE_BASE_URL) as service variables in Railway;
+# NOTE: VITE_* values are baked in at BUILD time, not runtime. Pass VITE_API_URL,
+# VITE_STORE_* values, and optionally VITE_PUBLIC_INVOICE_BASE_URL as service variables in Railway;
 # they are forwarded to the build via the ARG lines below.
 
 FROM node:20-bookworm-slim AS build
@@ -20,8 +20,12 @@ COPY frontend ./frontend
 # Build-time public config (Railway injects these as build args).
 ARG VITE_API_URL
 ARG VITE_PUBLIC_INVOICE_BASE_URL
+ARG VITE_STORE_NAME
+ARG VITE_STORE_LOGO_PATH
 ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_PUBLIC_INVOICE_BASE_URL=$VITE_PUBLIC_INVOICE_BASE_URL
+ENV VITE_STORE_NAME=$VITE_STORE_NAME
+ENV VITE_STORE_LOGO_PATH=$VITE_STORE_LOGO_PATH
 RUN npm run build -w @rms/web
 
 FROM node:20-bookworm-slim AS runner
