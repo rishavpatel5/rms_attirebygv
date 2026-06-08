@@ -4,6 +4,7 @@ import {
   type PurchaseOrderStatus,
 } from "@prisma/client";
 import { prisma } from "../../lib/prisma.js";
+import { runInTransaction } from "../../lib/transaction.js";
 import { AppError } from "../../middleware/error-handler.js";
 import { buildMeta, parsePagination } from "../../lib/pagination.js";
 import { computeLine, computeOrderTotals } from "../../lib/gst-calculator.js";
@@ -257,7 +258,7 @@ export async function replacePurchaseLines(
 
   const header = aggregateHeaderFromComputed(computed);
 
-  return prisma.$transaction(async (tx) => {
+  return runInTransaction(async (tx) => {
     await assertDraft(purchaseOrderId, tx);
 
     await tx.purchaseOrderItem.deleteMany({
@@ -323,7 +324,7 @@ export async function markPurchaseOrdered(
   id: string,
   createdById: string | null,
 ): Promise<unknown> {
-  return prisma.$transaction(async (tx) => {
+  return runInTransaction(async (tx) => {
     const po = await tx.purchaseOrder.findUnique({
       where: { id },
       include: { items: true },
@@ -366,7 +367,7 @@ export async function receivePurchase(
   body: ReceiveBody,
   createdById: string | null,
 ): Promise<unknown> {
-  return prisma.$transaction(async (tx) => {
+  return runInTransaction(async (tx) => {
     const po = await tx.purchaseOrder.findUnique({
       where: { id },
       include: { items: { orderBy: { id: "asc" } } },
@@ -505,7 +506,7 @@ export async function saveAndReceivePurchase(input: {
   });
   const header = aggregateHeaderFromComputed(computed);
 
-  return prisma.$transaction(async (tx) => {
+  return runInTransaction(async (tx) => {
     const sup = await tx.supplier.findFirst({
       where: { id: input.supplierId, isActive: true },
     });
@@ -610,7 +611,7 @@ export async function recordPurchasePayment(
   amount: number,
 ): Promise<unknown> {
   const amt = new Prisma.Decimal(amount);
-  return prisma.$transaction(async (tx) => {
+  return runInTransaction(async (tx) => {
     const po = await tx.purchaseOrder.findUnique({
       where: { id: purchaseOrderId },
     });

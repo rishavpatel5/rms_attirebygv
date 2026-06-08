@@ -4,6 +4,7 @@ import {
   Prisma,
 } from "@prisma/client";
 import { prisma } from "../../lib/prisma.js";
+import { runInTransaction } from "../../lib/transaction.js";
 import { AppError } from "../../middleware/error-handler.js";
 import { buildMeta, parsePagination } from "../../lib/pagination.js";
 
@@ -144,7 +145,7 @@ export async function createStockAdjustmentWithMovements(input: {
     a.variantId.localeCompare(b.variantId),
   );
 
-  return prisma.$transaction(async (tx) => {
+  return runInTransaction(async (tx) => {
     const adj = await tx.stockAdjustment.create({
       data: {
         reason: input.reason,
@@ -193,7 +194,7 @@ export async function applySalesReturnRestock(input: {
   salesReturnId: string;
   createdById: string | null;
 }): Promise<void> {
-  await prisma.$transaction(async (tx) => {
+  await runInTransaction(async (tx) => {
     const sr = await tx.salesReturn.findUnique({
       where: { id: input.salesReturnId },
       include: {
