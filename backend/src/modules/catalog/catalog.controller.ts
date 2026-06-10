@@ -1,20 +1,16 @@
 import type { Request, Response } from "express";
 import { getQueryRecord, parseBody } from "../../lib/http-parse.js";
 import * as categoryService from "./category.service.js";
-import * as imageService from "./product-image.service.js";
 import * as productService from "./product.service.js";
 import * as variantService from "./variant.service.js";
 import {
   createCategoryBodySchema,
   createColorBodySchema,
   createProductBodySchema,
-  createProductImageBodySchema,
   createSizeBodySchema,
   createVariantBodySchema,
-  reorderImagesBodySchema,
   updateCategoryBodySchema,
   updateProductBodySchema,
-  updateProductImageBodySchema,
   updateVariantBodySchema,
 } from "./catalog.validators.js";
 
@@ -103,37 +99,6 @@ export const catalogController = {
 
   async deleteVariant(req: Request, res: Response): Promise<void> {
     await variantService.deleteVariant(req.params.variantId!);
-    res.status(204).send();
-  },
-
-  async listImages(req: Request, res: Response): Promise<void> {
-    const rows = await imageService.listImages(req.params.productId!);
-    res.json({ data: rows });
-  },
-
-  async addImage(req: Request, res: Response): Promise<void> {
-    const body = parseBody(createProductImageBodySchema, req.body);
-    const row = await imageService.addImage({
-      productId: req.params.productId!,
-      ...body,
-    });
-    res.status(201).json({ data: row });
-  },
-
-  async updateImage(req: Request, res: Response): Promise<void> {
-    const body = parseBody(updateProductImageBodySchema, req.body);
-    const row = await imageService.updateImage(req.params.imageId!, body);
-    res.json({ data: row });
-  },
-
-  async reorderImages(req: Request, res: Response): Promise<void> {
-    const body = parseBody(reorderImagesBodySchema, req.body);
-    await imageService.reorderImages(req.params.productId!, body.orderedIds);
-    res.status(204).send();
-  },
-
-  async deleteImage(req: Request, res: Response): Promise<void> {
-    await imageService.deleteImage(req.params.imageId!);
     res.status(204).send();
   },
 

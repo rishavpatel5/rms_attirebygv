@@ -44,7 +44,7 @@ function buildComputedPurchaseLine(
     variantId: line.variantId,
     quantity: line.quantityOrdered,
     unitPrice: new Prisma.Decimal(line.unitCost),
-    lineDiscount: new Prisma.Decimal(line.lineDiscount ?? 0),
+    lineDiscount: new Prisma.Decimal(0),
     gstEnabled: line.gstEnabled ?? true,
     gstPricingMode: line.gstPricingMode ?? GstPricingMode.EXCLUSIVE,
     cgstRate: new Prisma.Decimal(line.cgstRate ?? 0),
@@ -101,11 +101,7 @@ export async function listPurchaseOrders(query: Record<string, unknown>) {
     ...(status ? { status } : {}),
     ...(search
       ? {
-          OR: [
-            { reference: { contains: search, mode: "insensitive" } },
-            { notes: { contains: search, mode: "insensitive" } },
-            { supplier: { name: { contains: search, mode: "insensitive" } } },
-          ],
+          supplier: { name: { contains: search, mode: "insensitive" } },
         }
       : {}),
   };
@@ -160,8 +156,6 @@ export async function getPurchaseOrderById(id: string) {
 
 export async function createPurchaseOrder(input: {
   supplierId: string;
-  reference?: string | null;
-  notes?: string | null;
   createdById: string | null;
 }) {
   const sup = await prisma.supplier.findFirst({
@@ -174,8 +168,6 @@ export async function createPurchaseOrder(input: {
   return prisma.purchaseOrder.create({
     data: {
       supplierId: input.supplierId,
-      reference: input.reference?.trim() || null,
-      notes: input.notes?.trim() || null,
       createdById: actorId,
     },
     include: {
@@ -188,8 +180,6 @@ export async function createPurchaseOrder(input: {
 export async function updatePurchaseOrderHeader(
   id: string,
   input: {
-    reference?: string | null;
-    notes?: string | null;
     status?: PurchaseOrderStatus;
   },
 ) {
@@ -206,10 +196,6 @@ export async function updatePurchaseOrderHeader(
   return prisma.purchaseOrder.update({
     where: { id },
     data: {
-      ...(input.reference !== undefined
-        ? { reference: input.reference?.trim() || null }
-        : {}),
-      ...(input.notes !== undefined ? { notes: input.notes?.trim() || null } : {}),
       ...(input.status !== undefined ? { status: input.status } : {}),
     },
     include: {
@@ -286,7 +272,6 @@ export async function replacePurchaseLines(
           cgstRate: c.cgstRate,
           sgstRate: c.sgstRate,
           igstRate: c.igstRate,
-          lineDiscount: new Prisma.Decimal(line.lineDiscount ?? 0),
           taxableValue: c.taxableValue,
           cgstAmount: c.cgstAmount,
           sgstAmount: c.sgstAmount,
@@ -478,8 +463,6 @@ export async function receivePurchase(
 /** Create draft, replace lines, mark ordered, and receive all in one transaction. */
 export async function saveAndReceivePurchase(input: {
   supplierId: string;
-  reference?: string | null;
-  notes?: string | null;
   lines: ReplaceLinesBody["lines"];
   createdById: string | null;
 }) {
@@ -517,8 +500,6 @@ export async function saveAndReceivePurchase(input: {
     const po = await tx.purchaseOrder.create({
       data: {
         supplierId: input.supplierId,
-        reference: input.reference?.trim() || null,
-        notes: input.notes?.trim() || null,
         createdById: actorId,
         status: "ORDERED",
         orderedAt: new Date(),
@@ -549,7 +530,6 @@ export async function saveAndReceivePurchase(input: {
           cgstRate: c.cgstRate,
           sgstRate: c.sgstRate,
           igstRate: c.igstRate,
-          lineDiscount: new Prisma.Decimal(line.lineDiscount ?? 0),
           taxableValue: c.taxableValue,
           cgstAmount: c.cgstAmount,
           sgstAmount: c.sgstAmount,

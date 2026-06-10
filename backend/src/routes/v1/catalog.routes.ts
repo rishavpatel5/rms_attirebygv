@@ -93,32 +93,6 @@ catalogRouter.delete(
 );
 
 catalogRouter.get(
-  "/products/:productId/images",
-  ...read,
-  asyncHandler((req, res) => catalogController.listImages(req, res)),
-);
-catalogRouter.post(
-  "/products/:productId/images",
-  ...write,
-  asyncHandler((req, res) => catalogController.addImage(req, res)),
-);
-catalogRouter.post(
-  "/products/:productId/images/reorder",
-  ...write,
-  asyncHandler((req, res) => catalogController.reorderImages(req, res)),
-);
-catalogRouter.patch(
-  "/images/:imageId",
-  ...write,
-  asyncHandler((req, res) => catalogController.updateImage(req, res)),
-);
-catalogRouter.delete(
-  "/images/:imageId",
-  ...write,
-  asyncHandler((req, res) => catalogController.deleteImage(req, res)),
-);
-
-catalogRouter.get(
   "/reference/colors",
   ...read,
   asyncHandler((req, res) => catalogController.listColors(req, res)),

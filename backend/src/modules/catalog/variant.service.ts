@@ -28,12 +28,7 @@ export async function listVariantsForProduct(
     productId,
     ...(isActive === undefined ? {} : { isActive }),
     ...(skuSearch
-      ? {
-          OR: [
-            { sku: { contains: skuSearch, mode: "insensitive" as const } },
-            { barcode: { contains: skuSearch, mode: "insensitive" as const } },
-          ],
-        }
+      ? { sku: { contains: skuSearch, mode: "insensitive" as const } }
       : {}),
   };
 
@@ -74,7 +69,6 @@ export async function getVariantById(id: string) {
 export async function createVariant(input: {
   productId: string;
   sku: string;
-  barcode?: string | null;
   listPrice?: number;
   costPrice?: number | null;
   gstEnabled?: boolean;
@@ -117,7 +111,6 @@ export async function createVariant(input: {
         data: {
           productId: input.productId,
           sku,
-          barcode: input.barcode?.trim() || null,
           listPrice: new Prisma.Decimal(input.listPrice ?? 0),
           costPrice:
             input.costPrice != null && input.costPrice !== undefined
@@ -146,7 +139,7 @@ export async function createVariant(input: {
           ? String((e as { code?: string }).code)
           : "";
       if (code === "P2002") {
-        throw new AppError(409, "SKU_OR_BARCODE_IN_USE", "SKU or barcode already exists");
+        throw new AppError(409, "SKU_IN_USE", "SKU already exists");
       }
       throw e;
     }
@@ -157,7 +150,6 @@ export async function updateVariant(
   id: string,
   input: {
     sku?: string;
-    barcode?: string | null;
     listPrice?: number;
     costPrice?: number | null;
     gstEnabled?: boolean;
@@ -184,9 +176,6 @@ export async function updateVariant(
       where: { id },
       data: {
         ...(input.sku !== undefined ? { sku: input.sku.trim() } : {}),
-        ...(input.barcode !== undefined
-          ? { barcode: input.barcode?.trim() || null }
-          : {}),
         ...(input.listPrice !== undefined
           ? { listPrice: new Prisma.Decimal(input.listPrice) }
           : {}),
@@ -229,7 +218,7 @@ export async function updateVariant(
       throw new AppError(404, "VARIANT_NOT_FOUND", "Variant not found");
     }
     if (code === "P2002") {
-      throw new AppError(409, "SKU_OR_BARCODE_IN_USE", "SKU or barcode already exists");
+      throw new AppError(409, "SKU_IN_USE", "SKU already exists");
     }
     throw e;
   }

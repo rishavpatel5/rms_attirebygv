@@ -65,11 +65,9 @@ export const purchaseController = {
 
   async saveAndReceive(req: Request, res: Response): Promise<void> {
     const body = parseBody(saveAndReceiveBodySchema, req.body);
-    const { supplierId, reference, notes, lines } = body;
+    const { supplierId, lines } = body;
     const row = await purchaseService.saveAndReceivePurchase({
       supplierId,
-      reference,
-      notes,
       lines,
       createdById: req.auth?.userId ?? null,
     });

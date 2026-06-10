@@ -17,8 +17,8 @@ This document explains the Prisma schema in `backend/prisma/schema.prisma`: **re
 ### Catalog
 
 - `Category` self-references for optional hierarchy (`parentId`).
-- `Product` belongs to one `Category`; has many `ProductImage` and many `ProductVariant`.
-- `ProductVariant` belongs to `Product`; optional `Color` and `Size` for apparel matrix; **`sku` globally unique**; optional `barcode` unique.
+- `Product` belongs to one `Category`; has many `ProductVariant`.
+- `ProductVariant` belongs to `Product`; optional `Color` and `Size` for apparel matrix; **`sku` globally unique**.
 - `Color` / `Size` are shared lookup tables so CRM and filters stay normalized.
 
 ### Inventory
@@ -73,7 +73,6 @@ High-value composite indexes are on: `inventory_logs` (variant + time, reference
 
 ### Additional SQL indexes (add in migrations when query plans show need)
 
-- **POS search**: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_variants_barcode_trgm ON product_variants USING gin (barcode gin_trgm_ops);` requires `pg_trgm` extension (available on Supabase; enable explicitly on self-hosted PG if allowed).
 - **Invoice lookup**: you already have `invoiceNumber` `@unique` on `orders`.
 - **Heavy reporting** (optional later): BRIN on `orders.created_at` / `inventory_logs.created_at` for very large tables on low-cost disks.
 

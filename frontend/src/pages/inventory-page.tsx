@@ -1,6 +1,7 @@
 import { AlertTriangle } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { ColorLabel } from "@/components/catalog/color-dot";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -47,6 +48,8 @@ type StockSummaryRow = {
   sku: string;
   productName: string;
   productKind: "APPAREL" | "ACCESSORY";
+  colorName?: string | null;
+  sizeLabel?: string | null;
   variantLabel: string;
   purchasedQty: number;
   soldQty: number;
@@ -204,7 +207,9 @@ function StockLedgerTable({ rows, emptyHint }: { rows: StockSummaryRow[]; emptyH
                 <div className="font-medium">{r.productName}</div>
                 <div className="text-xs text-muted-foreground">{r.sku}</div>
               </TableCell>
-              <TableCell className="text-sm text-muted-foreground">{r.variantLabel}</TableCell>
+              <TableCell className="text-sm text-muted-foreground">
+                <ColorLabel colorName={r.colorName}>{r.variantLabel}</ColorLabel>
+              </TableCell>
               <TableCell className="text-right tabular-nums">{r.purchasedQty}</TableCell>
               <TableCell className="text-right tabular-nums">{r.soldQty}</TableCell>
               <TableCell className="text-right font-medium tabular-nums">{r.currentStock}</TableCell>
@@ -362,6 +367,8 @@ type ValuationRow = {
   variantId: string;
   sku: string;
   productName: string;
+  colorName?: string | null;
+  sizeLabel?: string | null;
   quantityOnHand: number;
   unitCostWac: number | null;
   valuation: number;
@@ -429,7 +436,9 @@ function ValuationTab() {
               <TableBody>
                 {rows.map((r) => (
                   <TableRow key={r.variantId}>
-                    <TableCell className="font-mono text-xs">{r.sku}</TableCell>
+                    <TableCell className="font-mono text-xs">
+                      <ColorLabel colorName={r.colorName}>{r.sku}</ColorLabel>
+                    </TableCell>
                     <TableCell className="text-sm">{r.productName}</TableCell>
                     <TableCell className="text-right tabular-nums">{r.quantityOnHand}</TableCell>
                     <TableCell className="text-right text-sm tabular-nums">
@@ -471,9 +480,13 @@ function LowStockTable({ rows }: { rows: BalanceRow[] }) {
         {rows.map((r) => (
           <TableRow key={r.variant.id}>
             <TableCell className="font-medium">{r.variant.product.name}</TableCell>
-            <TableCell className="font-mono text-xs">{r.variant.sku}</TableCell>
+            <TableCell className="font-mono text-xs">
+              <ColorLabel colorName={r.variant.color?.name}>{r.variant.sku}</ColorLabel>
+            </TableCell>
             <TableCell className="text-sm text-muted-foreground">
-              {[r.variant.color?.name, r.variant.size?.label].filter(Boolean).join(" · ") || "—"}
+              <ColorLabel colorName={r.variant.color?.name}>
+                {[r.variant.color?.name, r.variant.size?.label].filter(Boolean).join(" / ") || "—"}
+              </ColorLabel>
             </TableCell>
             <TableCell className="text-right">
               <Badge variant={r.quantity === 0 ? "destructive" : "warning"}>{r.quantity}</Badge>

@@ -4,12 +4,12 @@ import {
   Minus,
   Plus,
   Receipt,
-  ScanBarcode,
   Search,
   Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { InvoicePreviewSheet } from "@/components/billing/invoice-preview-sheet";
+import { ColorLabel } from "@/components/catalog/color-dot";
 import { PosCartSummary } from "@/components/billing/pos-cart-summary";
 import { PosCheckoutCustomerBlock } from "@/components/billing/pos-checkout-customer";
 import { PosLineDiscount } from "@/components/billing/pos-line-discount";
@@ -54,7 +54,6 @@ const money = (n: number) =>
 type PosVariant = {
   id: string;
   sku: string;
-  barcode: string | null;
   listPrice: string | number;
   gstEnabled: boolean;
   gstPricingMode: "INCLUSIVE" | "EXCLUSIVE";
@@ -100,8 +99,6 @@ type InvoiceMetaResponse = {
 
 export function BillingPos() {
   const searchRef = useRef<HTMLInputElement>(null);
-  const barcodeRef = useRef("");
-  const barcodeResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [catalog, setCatalog] = useState<PosProduct[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [saleMessage, setSaleMessage] = useState<string | null>(null);
@@ -168,6 +165,7 @@ export function BillingPos() {
       variantId: variant.id,
       name: selected.name,
       variantLabel: variantLabel(variant),
+      colorName: variant.color?.name ?? null,
       sku: variant.sku,
       unitPrice: asMoneyNumber(variant.listPrice),
       availableStock: variant.inventory?.quantity ?? 0,
@@ -193,13 +191,14 @@ export function BillingPos() {
       }
 
       if (e.key === "Enter" && document.activeElement === searchRef.current) {
+        const q = searchQuery.trim().toLowerCase();
         const exact = filtered.find((p) =>
-          p.variants.some((v) => v.barcode === searchQuery || v.sku === searchQuery),
+          p.variants.some((v) => v.sku.toLowerCase() === q),
         );
         if (exact) {
           e.preventDefault();
           const exactVariant =
-            exact.variants.find((v) => v.barcode === searchQuery || v.sku === searchQuery) ??
+            exact.variants.find((v) => v.sku.toLowerCase() === q) ??
             exact.variants[0];
           setSelectedProduct(exact.id);
           setSelectedVariantIndex(Math.max(0, exact.variants.indexOf(exactVariant)));
@@ -208,6 +207,7 @@ export function BillingPos() {
             variantId: exactVariant.id,
             name: exact.name,
             variantLabel: variantLabel(exactVariant),
+            colorName: exactVariant.color?.name ?? null,
             sku: exactVariant.sku,
             unitPrice: asMoneyNumber(exactVariant.listPrice),
             availableStock: exactVariant.inventory?.quantity ?? 0,
@@ -227,6 +227,7 @@ export function BillingPos() {
             variantId: v.id,
             name: p.name,
             variantLabel: variantLabel(v),
+            colorName: v.color?.name ?? null,
             sku: v.sku,
             unitPrice: asMoneyNumber(v.listPrice),
             availableStock: v.inventory?.quantity ?? 0,
@@ -236,38 +237,6 @@ export function BillingPos() {
             igstRate: asMoneyNumber(v.igstRate),
           });
           setSearchQuery("");
-        }
-      }
-
-      if (!inField && /^[\d]$/.test(e.key)) {
-        barcodeRef.current += e.key;
-        if (barcodeResetTimer.current) clearTimeout(barcodeResetTimer.current);
-        barcodeResetTimer.current = setTimeout(() => {
-          barcodeRef.current = "";
-        }, 220);
-
-        const byBarcode = filtered.find((p) =>
-          p.variants.some((v) => v.barcode === barcodeRef.current),
-        );
-        if (byBarcode && barcodeRef.current.length >= 13) {
-          const v =
-            byBarcode.variants.find((row) => row.barcode === barcodeRef.current) ??
-            byBarcode.variants[0];
-          addOrIncrementLine({
-            productId: byBarcode.id,
-            variantId: v.id,
-            name: byBarcode.name,
-            variantLabel: variantLabel(v),
-            sku: v.sku,
-            unitPrice: asMoneyNumber(v.listPrice),
-            availableStock: v.inventory?.quantity ?? 0,
-            gstPricingMode: v.gstPricingMode,
-            cgstRate: asMoneyNumber(v.cgstRate),
-            sgstRate: asMoneyNumber(v.sgstRate),
-            igstRate: asMoneyNumber(v.igstRate),
-          });
-          barcodeRef.current = "";
-          if (barcodeResetTimer.current) clearTimeout(barcodeResetTimer.current);
         }
       }
     };
@@ -282,13 +251,6 @@ export function BillingPos() {
     setSelectedProduct,
     setSelectedVariantIndex,
   ]);
-
-  useEffect(
-    () => () => {
-      if (barcodeResetTimer.current) clearTimeout(barcodeResetTimer.current);
-    },
-    [],
-  );
 
   const cartDiscountType = useBillingStore((s) => s.cartDiscountType);
   const cartDiscountValue = useBillingStore((s) => s.cartDiscountValue);
@@ -406,15 +368,11 @@ export function BillingPos() {
                 <Input
                   ref={searchRef}
                   id="pos-search"
-                  placeholder="Name, SKU, or barcode…"
+                  placeholder="Name or SKU…"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   autoComplete="off"
                   className="h-11 rounded-xl border-border/80 pl-10 pr-10 text-base shadow-sm"
-                />
-                <ScanBarcode
-                  className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-                  aria-hidden
                 />
               </div>
             </CardContent>
@@ -477,7 +435,7 @@ export function BillingPos() {
                               : "border-border/80 bg-muted/40 hover:bg-muted",
                           )}
                         >
-                          {variantLabel(v)}
+                          <ColorLabel colorName={v.color?.name}>{variantLabel(v)}</ColorLabel>
                           <span className="ml-1.5 tabular-nums text-muted-foreground">
                             {money(asMoneyNumber(v.listPrice))}
                           </span>
@@ -532,7 +490,9 @@ export function BillingPos() {
                         <TableRow key={l.id}>
                           <TableCell>
                             <div className="text-sm font-medium leading-tight">{l.name}</div>
-                            <div className="text-xs text-muted-foreground">{l.variantLabel}</div>
+                            <div className="text-xs text-muted-foreground">
+                              <ColorLabel colorName={l.colorName}>{l.variantLabel}</ColorLabel>
+                            </div>
                             <div className="mt-1 text-xs tabular-nums text-muted-foreground">
                               {money(l.unitPrice)} each · avail {l.availableStock}
                             </div>

@@ -133,19 +133,15 @@ model Product {
   id          String        @id @default(cuid())
   name        String
   slug        String        @unique
-  description String?
   brand       String?
   kind        ProductKind
   gender      ProductGender @default(UNISEX)
-  hsnCode     String?       @map("hsn_code")
-  fitNotes    String?       @map("fit_notes")
   categoryId  String        @map("category_id")
   isActive    Boolean       @default(true) @map("is_active")
   createdAt   DateTime      @default(now()) @map("created_at")
   updatedAt   DateTime      @updatedAt @map("updated_at")
 
   category Category         @relation(fields: [categoryId], references: [id])
-  images   ProductImage[]
   variants ProductVariant[]
   offerProducts OfferProduct[]
 
@@ -155,26 +151,10 @@ model Product {
   @@map("products")
 }
 
-model ProductImage {
-  id         String   @id @default(cuid())
-  productId  String   @map("product_id")
-  url        String
-  altText    String?  @map("alt_text")
-  sortOrder  Int      @default(0) @map("sort_order")
-  isPrimary  Boolean  @default(false) @map("is_primary")
-  createdAt  DateTime @default(now()) @map("created_at")
-
-  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-
-  @@index([productId, sortOrder])
-  @@map("product_images")
-}
-
 model ProductVariant {
   id         String   @id @default(cuid())
   productId  String   @map("product_id")
   sku        String   @unique
-  barcode    String?  @unique
   listPrice  Decimal  @default(0) @map("list_price") @db.Decimal(12, 2)
   costPrice  Decimal? @map("cost_price") @db.Decimal(12, 2)
   gstEnabled Boolean  @default(true) @map("gst_enabled")
@@ -354,8 +334,6 @@ model PurchaseOrder {
   id           String                @id @default(cuid())
   supplierId   String                @map("supplier_id")
   status       PurchaseOrderStatus   @default(DRAFT)
-  reference    String?
-  notes        String?
   subtotal           Decimal           @default(0) @map("subtotal") @db.Decimal(14, 2)
   discountTotal      Decimal           @default(0) @map("discount_total") @db.Decimal(14, 2)
   taxableValueTotal  Decimal           @default(0) @map("taxable_value_total") @db.Decimal(14, 2)
@@ -392,7 +370,6 @@ model PurchaseOrderItem {
   cgstRate          Decimal  @default(0) @map("cgst_rate") @db.Decimal(6, 3)
   sgstRate          Decimal  @default(0) @map("sgst_rate") @db.Decimal(6, 3)
   igstRate          Decimal  @default(0) @map("igst_rate") @db.Decimal(6, 3)
-  lineDiscount      Decimal  @default(0) @map("line_discount") @db.Decimal(14, 4)
   taxableValue      Decimal  @default(0) @map("taxable_value") @db.Decimal(14, 4)
   cgstAmount        Decimal  @default(0) @map("cgst_amount") @db.Decimal(14, 4)
   sgstAmount        Decimal  @default(0) @map("sgst_amount") @db.Decimal(14, 4)

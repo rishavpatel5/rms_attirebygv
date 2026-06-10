@@ -793,33 +793,30 @@ export async function searchPosCatalog(query: Record<string, unknown>) {
     typeof query.search === "string" && query.search.trim().length > 0
       ? query.search.trim()
       : undefined;
-  const sku =
+  const skuParam =
     typeof query.sku === "string" && query.sku.trim().length > 0
       ? query.sku.trim()
       : undefined;
+  /** Unified term: POS search box sends `search`; legacy callers may send `sku`. */
+  const term = skuParam ?? search;
+
+  const variantSkuMatch = term
+    ? {
+        isActive: true,
+        sku: { contains: term, mode: "insensitive" as const },
+      }
+    : undefined;
 
   const products = await prisma.product.findMany({
     where: {
       isActive: true,
-      ...(search
+      ...(term
         ? {
             OR: [
-              { name: { contains: search, mode: "insensitive" } },
-              { slug: { contains: search, mode: "insensitive" } },
+              { name: { contains: term, mode: "insensitive" } },
+              { slug: { contains: term, mode: "insensitive" } },
+              ...(variantSkuMatch ? [{ variants: { some: variantSkuMatch } }] : []),
             ],
-          }
-        : {}),
-      ...(sku
-        ? {
-            variants: {
-              some: {
-                isActive: true,
-                OR: [
-                  { sku: { contains: sku, mode: "insensitive" } },
-                  { barcode: { contains: sku, mode: "insensitive" } },
-                ],
-              },
-            },
           }
         : {}),
     },
@@ -829,7 +826,6 @@ export async function searchPosCatalog(query: Record<string, unknown>) {
       id: true,
       name: true,
       slug: true,
-      hsnCode: true,
       kind: true,
       gender: true,
       variants: {
@@ -839,7 +835,6 @@ export async function searchPosCatalog(query: Record<string, unknown>) {
         select: {
           id: true,
           sku: true,
-          barcode: true,
           listPrice: true,
           gstEnabled: true,
           gstPricingMode: true,
@@ -854,5 +849,26 @@ export async function searchPosCatalog(query: Record<string, unknown>) {
     },
   });
 
-  return { items: products };
+  const termLower = term?.toLowerCase();
+  const items =
+    termLower === undefined
+      ? products
+      : products
+          .map((p) => {
+            const nameMatch =
+              p.name.toLowerCase().includes(termLower) ||
+              p.slug.toLowerCase().includes(termLower);
+            if (nameMatch) {
+              return p;
+            }
+            const matchingVariants = p.variants.filter((v) =>
+              v.sku.toLowerCase().includes(termLower),
+            );
+            return matchingVariants.length > 0
+              ? { ...p, variants: matchingVariants }
+              : p;
+          })
+          .filter((p) => p.variants.length > 0);
+
+  return { items };
 }

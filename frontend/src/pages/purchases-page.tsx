@@ -3,12 +3,12 @@ import {
   Loader2,
   Minus,
   Plus,
-  ScanBarcode,
   Search,
   Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { ColorLabel } from "@/components/catalog/color-dot";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -44,7 +44,6 @@ type SearchProduct = {
 type VariantRow = {
   id: string;
   sku: string;
-  barcode: string | null;
   color: { name: string } | null;
   size: { label: string } | null;
 };
@@ -56,6 +55,7 @@ type CartLine = {
   productName: string;
   variantSku: string;
   variantDisplay: string;
+  colorName: string | null;
   qty: number;
   unitCost: number;
   gstEnabled: boolean;
@@ -107,8 +107,6 @@ export function PurchasesPage() {
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [supplierId, setSupplierId] = useState("");
-  const [reference, setReference] = useState("");
-  const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -256,6 +254,7 @@ export function PurchasesPage() {
       productName: selectedProduct.name,
       variantSku: selectedVariant.sku,
       variantDisplay: variantDisplay(selectedVariant),
+      colorName: selectedVariant.color?.name ?? null,
       qty,
       unitCost: unit,
       gstEnabled: draftGstEnabled,
@@ -309,7 +308,6 @@ export function PurchasesPage() {
         cgstRate: l.cgst,
         sgstRate: l.sgst,
         igstRate: l.igst,
-        lineDiscount: 0,
       }));
     if (payloadLines.length === 0) {
       setMsg("Add at least one line to the purchase cart.");
@@ -319,8 +317,6 @@ export function PurchasesPage() {
     try {
       await apiPostJsonAuthed("/api/v1/purchases/save-and-receive", {
         supplierId,
-        reference: reference.trim() || null,
-        notes: notes.trim() || null,
         lines: payloadLines,
       });
       setMsg("Inventory received. Stock and movement logs are updated.");
@@ -394,10 +390,6 @@ export function PurchasesPage() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                   autoComplete="off"
                   className="h-11 rounded-xl border-border/80 pl-10 pr-10 text-base shadow-sm"
-                />
-                <ScanBarcode
-                  className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-                  aria-hidden
                 />
               </div>
               <p className="mt-2 text-[11px] text-muted-foreground">
@@ -481,7 +473,7 @@ export function PurchasesPage() {
                                 : "border-border/80 bg-muted/40 hover:bg-muted",
                             )}
                           >
-                            <span>{variantDisplay(v)}</span>
+                            <ColorLabel colorName={v.color?.name}>{variantDisplay(v)}</ColorLabel>
                             <span className="ml-1.5 font-mono opacity-80">{v.sku}</span>
                           </button>
                         ))}
@@ -570,42 +562,22 @@ export function PurchasesPage() {
           <Card className="border-border/60 shadow-sm xl:sticky xl:top-4">
             <CardHeader className="space-y-1 pb-2">
               <CardTitle className="text-base">Purchase cart</CardTitle>
-              <CardDescription>Supplier and reference — then receive into live stock.</CardDescription>
+              <CardDescription>Select supplier — then receive into live stock.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Supplier</Label>
-                  <select
-                    className="flex h-9 w-full rounded-lg border border-input bg-background px-2 text-sm"
-                    value={supplierId}
-                    onChange={(e) => setSupplierId(e.target.value)}
-                  >
-                    {suppliers.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Reference</Label>
-                  <Input
-                    className="h-9 rounded-lg text-sm"
-                    value={reference}
-                    onChange={(e) => setReference(e.target.value)}
-                    placeholder="GRN / invoice #"
-                  />
-                </div>
-                <div className="space-y-1.5 sm:col-span-2">
-                  <Label className="text-xs">Notes</Label>
-                  <Input
-                    className="h-9 rounded-lg text-sm"
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Optional"
-                  />
-                </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Supplier</Label>
+                <select
+                  className="flex h-9 w-full rounded-lg border border-input bg-background px-2 text-sm"
+                  value={supplierId}
+                  onChange={(e) => setSupplierId(e.target.value)}
+                >
+                  {suppliers.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <Separator />
@@ -644,7 +616,7 @@ export function PurchasesPage() {
                               <div className="text-[11px] text-muted-foreground">{l.variantSku}</div>
                             </TableCell>
                             <TableCell className="max-w-[120px] text-xs text-muted-foreground">
-                              {l.variantDisplay}
+                              <ColorLabel colorName={l.colorName}>{l.variantDisplay}</ColorLabel>
                             </TableCell>
                             <TableCell className="text-right">
                               <div className="inline-flex items-center gap-0.5 rounded-md border border-border/70 p-0.5">

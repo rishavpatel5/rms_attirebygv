@@ -55,7 +55,6 @@ export async function getSupplierById(id: string) {
         select: {
           id: true,
           status: true,
-          reference: true,
           grandTotal: true,
           amountPaid: true,
           createdAt: true,

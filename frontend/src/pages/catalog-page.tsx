@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight, Loader2, PackagePlus, Palette, Plus, Rows3, Ruler, Tag } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { ColorLabel } from "@/components/catalog/color-dot";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -53,7 +54,7 @@ function AuthGate() {
   );
 }
 
-type MatrixRow = { colorId: string; sizeId: string; sku: string; barcode: string; key: string };
+type MatrixRow = { colorId: string; sizeId: string; sku: string; key: string };
 
 type CatalogProductRow = {
   id: string;
@@ -61,15 +62,14 @@ type CatalogProductRow = {
   brand: string | null;
   kind: string;
   category: { name: string };
-  _count?: { variants: number; images: number };
+  _count?: { variants: number };
 };
 
 const BLUEPRINT_STEPS = [
-  { n: 1, title: "Identity", sub: "Classification & story" },
+  { n: 1, title: "Identity", sub: "Classification" },
   { n: 2, title: "Variants", sub: "Colours, sizes & SKUs" },
   { n: 3, title: "Pricing & tax", sub: "Shelf economics" },
-  { n: 4, title: "Visual", sub: "Hero image" },
-  { n: 5, title: "Complete", sub: "Ready for stock" },
+  { n: 4, title: "Complete", sub: "Ready for stock" },
 ] as const;
 
 const selectControl =
@@ -149,9 +149,6 @@ export function CatalogPage() {
   const [pGender, setPGender] = useState<(typeof GENDERS)[number]>("UNISEX");
   const [pBrand, setPBrand] = useState("");
   const [pCategoryId, setPCategoryId] = useState("");
-  const [pDesc, setPDesc] = useState("");
-  const [pFitNotes, setPFitNotes] = useState("");
-  const [pHsn, setPHsn] = useState("");
 
   const [selColors, setSelColors] = useState<string[]>([]);
   const [selSizes, setSelSizes] = useState<string[]>([]);
@@ -164,11 +161,6 @@ export function CatalogPage() {
   const [sgstPct, setSgstPct] = useState("2.5");
   const [igstPct, setIgstPct] = useState("0");
   const [lowStockThr, setLowStockThr] = useState("5");
-
-  const [accessoryBarcode, setAccessoryBarcode] = useState("");
-
-  const [imageUrl, setImageUrl] = useState("");
-  const [imageAlt, setImageAlt] = useState("");
 
   const [productId, setProductId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -264,7 +256,7 @@ export function CatalogPage() {
       return;
     }
     if (!productId) return;
-    if (n >= 2 && n <= 5) setStep(n);
+    if (n >= 2 && n <= 4) setStep(n);
   }
 
   async function submitQuickCategory() {
@@ -377,7 +369,7 @@ export function CatalogPage() {
         const color = colors.find((x) => x.id === c)?.name ?? "c";
         const size = sizes.find((x) => x.id === s)?.code ?? "s";
         const sku = `${slug}-${color.replace(/\s+/g, "")}-${size}`.toUpperCase().slice(0, 64);
-        rows.push({ colorId: c, sizeId: s, sku, barcode: "", key: `${c}-${s}` });
+        rows.push({ colorId: c, sizeId: s, sku, key: `${c}-${s}` });
       }
     }
     setMatrix(rows);
@@ -397,9 +389,6 @@ export function CatalogPage() {
         categoryId: pCategoryId,
         kind: pKind,
         gender: pGender,
-        hsnCode: pHsn.trim() || null,
-        description: pDesc.trim() || null,
-        fitNotes: pFitNotes.trim() || null,
       });
       setProductId(created.id);
       setStep(2);
@@ -419,7 +408,6 @@ export function CatalogPage() {
         const sku = `${slugify(pName || "acc").toUpperCase()}-OS`.slice(0, 64);
         await apiPostJsonAuthed(`/api/v1/catalog/products/${productId}/variants`, {
           sku,
-          barcode: accessoryBarcode.trim() || null,
           listPrice: Number(listPrice) || 0,
           colorId: selColors[0] || null,
           sizeId: null,
@@ -428,7 +416,6 @@ export function CatalogPage() {
         for (const row of matrix) {
           await apiPostJsonAuthed(`/api/v1/catalog/products/${productId}/variants`, {
             sku: row.sku,
-            barcode: row.barcode.trim() || null,
             listPrice: 0,
             colorId: row.colorId,
             sizeId: row.sizeId,
@@ -474,26 +461,6 @@ export function CatalogPage() {
       setStep(4);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed to update pricing");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function persistStep4() {
-    if (!productId || !imageUrl.trim()) {
-      return;
-    }
-    setBusy(true);
-    setErr(null);
-    try {
-      await apiPostJsonAuthed(`/api/v1/catalog/products/${productId}/images`, {
-        url: imageUrl.trim(),
-        altText: imageAlt.trim() || null,
-        isPrimary: true,
-      });
-      setStep(5);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Failed to upload image");
     } finally {
       setBusy(false);
     }
@@ -615,7 +582,7 @@ export function CatalogPage() {
                   return (
                     <div>
                       <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-muted-foreground">
-                        Step {meta.n} of 5
+                        Step {meta.n} of 4
                       </p>
                       <h3 className="mt-1 text-xl font-semibold tracking-tight sm:text-2xl">{meta.title}</h3>
                       <p className="mt-1.5 max-w-2xl text-sm text-muted-foreground">{meta.sub}</p>
@@ -740,43 +707,6 @@ export function CatalogPage() {
             </p>
           </div>
 
-          <div className="space-y-3">
-            <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Description
-            </Label>
-            <textarea
-              className="flex min-h-[120px] w-full rounded-2xl border-2 border-border/60 bg-background px-4 py-3 text-sm leading-relaxed shadow-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              value={pDesc}
-              onChange={(e) => setPDesc(e.target.value)}
-              placeholder="Fabric, story, care, how it fits the floor…"
-            />
-          </div>
-
-          <div className="grid gap-6 sm:grid-cols-2">
-            <div className="space-y-3">
-              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Fit notes (optional)
-              </Label>
-              <Input
-                value={pFitNotes}
-                onChange={(e) => setPFitNotes(e.target.value)}
-                placeholder="e.g. Athletic fit, true to size"
-                className="h-11 rounded-xl border-2 border-border/60 bg-background px-4 text-sm shadow-sm"
-              />
-            </div>
-            <div className="space-y-3">
-              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                HSN (optional)
-              </Label>
-              <Input
-                value={pHsn}
-                onChange={(e) => setPHsn(e.target.value)}
-                placeholder="GST chapter heading"
-                className="h-11 rounded-xl border-2 border-border/60 bg-background px-4 font-mono text-sm shadow-sm"
-              />
-            </div>
-          </div>
-
           <div className="flex flex-wrap justify-end gap-3 border-t border-border/50 pt-8">
             <Button
               type="button"
@@ -806,8 +736,8 @@ export function CatalogPage() {
           <div className="space-y-1">
             <p className="text-sm text-muted-foreground">
               {pKind === "APPAREL"
-                ? "Choose colour and size chips, then refine SKU and barcode per combination."
-                : "One sellable SKU — optional colour chip and POS barcode."}
+                ? "Choose colour and size chips, then refine SKU per combination."
+                : "One sellable SKU — optional colour chip."}
             </p>
           </div>
             {pKind === "APPAREL" ? (
@@ -888,7 +818,6 @@ export function CatalogPage() {
                         <tr>
                           <th className="px-2 py-2 font-medium">Colour / size</th>
                           <th className="px-2 py-2 font-medium">SKU</th>
-                          <th className="px-2 py-2 font-medium">Barcode</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -898,7 +827,9 @@ export function CatalogPage() {
                           return (
                             <tr key={row.key} className="border-b border-border/40 last:border-0">
                               <td className="px-2 py-2 text-muted-foreground">
-                                {colorName} · {sizeLabel}
+                                <ColorLabel colorName={colorName}>
+                                  {colorName} · {sizeLabel}
+                                </ColorLabel>
                               </td>
                               <td className="px-2 py-1">
                                 <Input
@@ -908,20 +839,6 @@ export function CatalogPage() {
                                     setMatrix((prev) =>
                                       prev.map((r) =>
                                         r.key === row.key ? { ...r, sku: e.target.value } : r,
-                                      ),
-                                    )
-                                  }
-                                />
-                              </td>
-                              <td className="px-2 py-1">
-                                <Input
-                                  className="h-8 font-mono text-xs"
-                                  value={row.barcode}
-                                  placeholder="Optional"
-                                  onChange={(e) =>
-                                    setMatrix((prev) =>
-                                      prev.map((r) =>
-                                        r.key === row.key ? { ...r, barcode: e.target.value } : r,
                                       ),
                                     )
                                   }
@@ -969,15 +886,6 @@ export function CatalogPage() {
                       </Button>
                     ))}
                   </div>
-                <div className="space-y-2">
-                  <Label>Barcode / POS code (optional)</Label>
-                  <Input
-                    value={accessoryBarcode}
-                    onChange={(e) => setAccessoryBarcode(e.target.value)}
-                    placeholder="EAN-13 or internal code"
-                    className="font-mono text-sm"
-                  />
-                </div>
               </div>
             )}
             <Separator className="my-2" />
@@ -1095,56 +1003,6 @@ export function CatalogPage() {
       ) : null}
 
       {step === 4 ? (
-        <div className="space-y-6 rounded-2xl border border-border/50 bg-muted/5 p-6 shadow-inner sm:p-8">
-          <p className="max-w-xl text-sm text-muted-foreground">
-            Paste a secure HTTPS image URL (for example from your DAM or CDN). This becomes the primary visual
-            on the record.
-          </p>
-          <div className="grid max-w-lg gap-5">
-            <div className="space-y-2">
-              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Image URL
-              </Label>
-              <Input
-                value={imageUrl}
-                onChange={(e) => setImageUrl(e.target.value)}
-                placeholder="https://…"
-                className="h-11 rounded-xl border-2 border-border/60 font-mono text-sm"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Alt text
-              </Label>
-              <Input
-                value={imageAlt}
-                onChange={(e) => setImageAlt(e.target.value)}
-                className="h-11 rounded-xl border-2 border-border/60"
-              />
-            </div>
-            <div className="flex flex-wrap justify-between gap-3 border-t border-border/40 pt-6">
-              <Button type="button" variant="ghost" className="rounded-full" onClick={() => setStep(3)}>
-                <ChevronLeft className="mr-1 size-4" /> Back
-              </Button>
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="outline" className="rounded-full" onClick={() => setStep(5)}>
-                  Skip for now
-                </Button>
-                <Button
-                  type="button"
-                  className="rounded-full px-6 font-semibold"
-                  disabled={busy || !imageUrl.trim()}
-                  onClick={() => void persistStep4()}
-                >
-                  Save image
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {step === 5 ? (
         <div className="space-y-6 rounded-2xl border border-emerald-500/25 bg-gradient-to-br from-emerald-500/5 via-card to-card p-6 shadow-inner sm:p-8">
           <div className="flex flex-wrap items-center gap-3">
             <h4 className="text-lg font-semibold tracking-tight">Blueprint saved</h4>
@@ -1171,9 +1029,6 @@ export function CatalogPage() {
                 setStep(1);
                 setProductId(null);
                 setPName("");
-                setPDesc("");
-                setPFitNotes("");
-                setAccessoryBarcode("");
                 setMatrix([]);
                 setSelColors([]);
                 setSelSizes([]);

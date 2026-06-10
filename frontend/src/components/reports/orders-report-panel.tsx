@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronRight, FileText } from "lucide-react";
 import { Fragment, useCallback, useEffect, useState } from "react";
+import { ColorLabel } from "@/components/catalog/color-dot";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -352,9 +353,13 @@ function OrderLinesDetail({
             <TableRow key={ln.id}>
               <TableCell>
                 <div className="text-sm font-medium">{ln.productName}</div>
-                <div className="text-xs text-muted-foreground">{ln.variantLabel}</div>
+                <div className="text-xs text-muted-foreground">
+                  <ColorLabel colorName={ln.colorName}>{ln.variantLabel}</ColorLabel>
+                </div>
               </TableCell>
-              <TableCell className="font-mono text-xs">{ln.sku}</TableCell>
+              <TableCell className="font-mono text-xs">
+                <ColorLabel colorName={ln.colorName}>{ln.sku}</ColorLabel>
+              </TableCell>
               <TableCell className="text-right tabular-nums">{ln.quantity}</TableCell>
               <TableCell className="text-right tabular-nums">{fmtInr(ln.unitPrice)}</TableCell>
               <TableCell className="text-right tabular-nums text-xs">

@@ -7,7 +7,6 @@ export type CatalogVariant = {
 export type CatalogProduct = {
   id: string;
   name: string;
-  barcode: string;
   variants: CatalogVariant[];
 };
 
@@ -15,7 +14,6 @@ export const catalogProducts: CatalogProduct[] = [
   {
     id: "p1",
     name: "Pro Training Tee",
-    barcode: "8901000100012",
     variants: [
       { sku: "TEE-BLK-S", label: "Black / S", price: 1299 },
       { sku: "TEE-BLK-M", label: "Black / M", price: 1299 },
@@ -25,7 +23,6 @@ export const catalogProducts: CatalogProduct[] = [
   {
     id: "p2",
     name: "Court Shorts",
-    barcode: "8901000100029",
     variants: [
       { sku: "SHO-NVY-M", label: "Navy / M", price: 1899 },
       { sku: "SHO-NVY-L", label: "Navy / L", price: 1899 },
@@ -35,7 +32,6 @@ export const catalogProducts: CatalogProduct[] = [
   {
     id: "p3",
     name: "Run Cap",
-    barcode: "8901000100036",
     variants: [
       { sku: "CAP-BLK-1", label: "Black — OS", price: 799 },
       { sku: "CAP-GRY-1", label: "Grey — OS", price: 799 },
@@ -44,7 +40,6 @@ export const catalogProducts: CatalogProduct[] = [
   {
     id: "p4",
     name: "Merino Crew",
-    barcode: "8901000100043",
     variants: [
       { sku: "MRN-BRN-M", label: "Brown / M", price: 3499 },
       { sku: "MRN-BRN-L", label: "Brown / L", price: 3499 },
@@ -52,9 +47,11 @@ export const catalogProducts: CatalogProduct[] = [
   },
 ];
 
-export function findProductByBarcode(code: string) {
+export function findProductBySku(code: string) {
   const trimmed = code.trim();
-  return catalogProducts.find((p) => p.barcode === trimmed) ?? null;
+  return (
+    catalogProducts.find((p) => p.variants.some((v) => v.sku === trimmed)) ?? null
+  );
 }
 
 export function searchCatalog(query: string) {
@@ -63,7 +60,6 @@ export function searchCatalog(query: string) {
   return catalogProducts.filter(
     (p) =>
       p.name.toLowerCase().includes(q) ||
-      p.barcode.includes(q) ||
       p.variants.some(
         (v) =>
           v.sku.toLowerCase().includes(q) || v.label.toLowerCase().includes(q),

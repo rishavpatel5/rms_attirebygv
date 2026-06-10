@@ -5,13 +5,9 @@ const decimalLike = z.coerce.number().finite();
 
 export const createPurchaseOrderBodySchema = z.object({
   supplierId: z.string().cuid(),
-  reference: z.string().trim().max(120).optional().nullable(),
-  notes: z.string().trim().max(2000).optional().nullable(),
 });
 
 export const updatePurchaseOrderBodySchema = z.object({
-  reference: z.string().trim().max(120).optional().nullable(),
-  notes: z.string().trim().max(2000).optional().nullable(),
   status: z.nativeEnum(PurchaseOrderStatus).optional(),
 });
 
@@ -24,7 +20,6 @@ export const purchaseLineInputSchema = z.object({
   cgstRate: decimalLike.min(0).max(100).optional().default(0),
   sgstRate: decimalLike.min(0).max(100).optional().default(0),
   igstRate: decimalLike.min(0).max(100).optional().default(0),
-  lineDiscount: decimalLike.min(0).max(1_000_000).optional().default(0),
 });
 
 export const replacePurchaseLinesBodySchema = z.object({

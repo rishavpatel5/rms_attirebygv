@@ -399,6 +399,8 @@ export async function listStockSummary(query: Record<string, unknown>) {
       sku: r.sku,
       productName: r.product_name,
       productKind: r.product_kind,
+      colorName: r.color_name,
+      sizeLabel: r.size_label,
       variantLabel: [r.color_name, r.size_label].filter(Boolean).join(" / ") || "Default",
       purchasedQty: Number(r.purchased_qty ?? 0),
       soldQty: Number(r.sold_qty ?? 0),

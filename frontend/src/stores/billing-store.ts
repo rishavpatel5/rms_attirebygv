@@ -19,6 +19,7 @@ export type BillingLine = {
   variantId: string;
   name: string;
   variantLabel: string;
+  colorName: string | null;
   sku: string;
   qty: number;
   unitPrice: number;
@@ -194,6 +195,7 @@ export const useBillingStore = create<BillingState>((set, get) => ({
           variantId: payload.variantId,
           name: payload.name,
           variantLabel: payload.variantLabel,
+          colorName: payload.colorName ?? null,
           sku: payload.sku,
           qty: Math.min(payload.availableStock, addQty),
           unitPrice: payload.unitPrice,

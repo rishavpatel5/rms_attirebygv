@@ -47,7 +47,7 @@ export async function listProducts(query: Record<string, unknown>) {
       orderBy: [{ updatedAt: "desc" }],
       include: {
         category: { select: { id: true, name: true, slug: true } },
-        _count: { select: { variants: true, images: true } },
+        _count: { select: { variants: true } },
       },
     }),
     prisma.product.count({ where }),
@@ -61,7 +61,6 @@ export async function getProductById(id: string) {
     where: { id },
     include: {
       category: true,
-      images: { orderBy: { sortOrder: "asc" } },
       variants: {
         orderBy: { sku: "asc" },
         include: {
@@ -81,12 +80,9 @@ export async function getProductById(id: string) {
 export async function createProduct(input: {
   name: string;
   slug?: string;
-  description?: string | null;
   brand?: string | null;
   kind: ProductKind;
   gender: ProductGender;
-  hsnCode?: string | null;
-  fitNotes?: string | null;
   categoryId: string;
 }) {
   const slug = (input.slug?.trim() || slugify(input.name)).toLowerCase();
@@ -104,12 +100,9 @@ export async function createProduct(input: {
       data: {
         name: input.name.trim(),
         slug,
-        description: input.description?.trim() ?? null,
         brand: input.brand?.trim() || null,
         kind: input.kind,
         gender: input.gender,
-        hsnCode: input.hsnCode?.trim() || null,
-        fitNotes: input.fitNotes?.trim() || null,
         categoryId: input.categoryId,
       },
     });
@@ -130,12 +123,9 @@ export async function updateProduct(
   input: {
     name?: string;
     slug?: string;
-    description?: string | null;
     brand?: string | null;
     kind?: ProductKind;
     gender?: ProductGender;
-    hsnCode?: string | null;
-    fitNotes?: string | null;
     categoryId?: string;
     isActive?: boolean;
   },
@@ -159,20 +149,11 @@ export async function updateProduct(
         ...(input.slug !== undefined
           ? { slug: input.slug.trim().toLowerCase() }
           : {}),
-        ...(input.description !== undefined
-          ? { description: input.description?.trim() ?? null }
-          : {}),
         ...(input.brand !== undefined
           ? { brand: input.brand?.trim() || null }
           : {}),
         ...(input.kind !== undefined ? { kind: input.kind } : {}),
         ...(input.gender !== undefined ? { gender: input.gender } : {}),
-        ...(input.hsnCode !== undefined
-          ? { hsnCode: input.hsnCode?.trim() || null }
-          : {}),
-        ...(input.fitNotes !== undefined
-          ? { fitNotes: input.fitNotes?.trim() || null }
-          : {}),
         ...(input.categoryId !== undefined
           ? { categoryId: input.categoryId }
           : {}),

@@ -1,5 +1,6 @@
 import { useBillingQuote } from "@/hooks/use-billing-quote";
 import { useBillingStore } from "@/stores/billing-store";
+import { ColorLabel } from "@/components/catalog/color-dot";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -78,7 +79,9 @@ export function InvoicePreviewSheet() {
                   <TableRow key={l.id}>
                     <TableCell>
                       <div className="font-medium">{l.name}</div>
-                      <div className="text-xs text-muted-foreground">{l.variantLabel}</div>
+                      <div className="text-xs text-muted-foreground">
+                        <ColorLabel colorName={l.colorName}>{l.variantLabel}</ColorLabel>
+                      </div>
                       {ql && num(ql.itemDiscountAmount) > 0 ? (
                         <div className="text-[10px] text-emerald-700 dark:text-emerald-400">
                           −{money(num(ql.itemDiscountAmount))} item disc.

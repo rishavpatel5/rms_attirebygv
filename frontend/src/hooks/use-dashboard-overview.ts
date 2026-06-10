@@ -53,6 +53,7 @@ export type InventoryAlertRow = {
   id: string;
   sku: string;
   name: string;
+  colorName: string | null;
   level: number;
   status: "critical" | "low";
 };
@@ -243,6 +244,7 @@ export function useDashboardOverview() {
             id: row.variant.id,
             sku: row.variant.sku,
             name: variantLabel(row),
+            colorName: row.variant.color?.name ?? null,
             level: qty,
             status: critical ? "critical" : "low",
           };

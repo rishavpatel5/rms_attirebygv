@@ -86,6 +86,7 @@ export type ProfitLine = {
   invoiceNumber: string | null;
   sku: string;
   productName: string;
+  colorName: string | null;
   quantity: number;
   lineTotal: number;
   unitCostWac: number | null;
@@ -118,6 +119,8 @@ export type ValuationRow = {
   variantId: string;
   sku: string;
   productName: string;
+  colorName: string | null;
+  sizeLabel: string | null;
   quantityOnHand: number;
   unitCostWac: number | null;
   valuation: number;
@@ -143,6 +146,7 @@ export type VelocityRow = {
   variantId: string;
   sku: string;
   productName: string;
+  colorName: string | null;
   unitsSold: number;
   revenue: number;
 };
@@ -169,6 +173,7 @@ export type DeadStockRow = {
   variantId: string;
   sku: string;
   productName: string;
+  colorName: string | null;
   quantityOnHand: number;
   lastSaleAt: string | null;
   daysSinceSale: number | null;
@@ -259,10 +264,10 @@ export type OrderReportLine = {
   id: string;
   variantId: string;
   sku: string;
-  barcode: string | null;
   productName: string;
   productKind: string;
-  hsnCode: string | null;
+  colorName: string | null;
+  sizeLabel: string | null;
   variantLabel: string;
   quantity: number;
   unitPrice: string;

@@ -22,7 +22,7 @@ type OrderReportRow = Prisma.OrderGetPayload<{
       include: {
         variant: {
           include: {
-            product: { select: { id: true; name: true; slug: true; hsnCode: true; kind: true } };
+            product: { select: { id: true; name: true; slug: true; kind: true } };
             color: true;
             size: true;
           };
@@ -97,10 +97,10 @@ export function serializeOrderForReport(row: OrderReportRow) {
         id: it.id,
         variantId: it.variantId,
         sku: it.variant.sku,
-        barcode: it.variant.barcode,
         productName: p.name,
         productKind: p.kind,
-        hsnCode: p.hsnCode,
+        colorName: it.variant.color?.name ?? null,
+        sizeLabel: it.variant.size?.label ?? null,
         variantLabel: variantLabel || "—",
         quantity: it.quantity,
         unitPrice: dec4(it.unitPrice),

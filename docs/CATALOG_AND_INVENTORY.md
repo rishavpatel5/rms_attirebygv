@@ -12,7 +12,7 @@ Base paths:
 | Capability | Roles |
 |------------|--------|
 | Read catalog + inventory lists | `ADMIN`, `CASHIER`, `INVENTORY_MANAGER` |
-| Write categories, products, variants, images, colors, sizes | `ADMIN`, `INVENTORY_MANAGER` |
+| Write categories, products, variants, colors, sizes | `ADMIN`, `INVENTORY_MANAGER` |
 | Stock adjustments + return restock apply | `ADMIN`, `INVENTORY_MANAGER` |
 
 ## Catalog API summary
@@ -25,8 +25,8 @@ Base paths:
 | PATCH | `/catalog/categories/:id` | Update |
 | DELETE | `/catalog/categories/:id` | Delete (blocked if products or children exist) |
 | GET | `/catalog/products` | List (`categoryId`, `kind`, `gender`, `isActive`, `search`) |
-| POST | `/catalog/products` | Create (`gender`, `kind`, `hsnCode`, …) |
-| GET | `/catalog/products/:productId` | Detail + variants + images + balances |
+| POST | `/catalog/products` | Create (`gender`, `kind`, …) |
+| GET | `/catalog/products/:productId` | Detail + variants + balances |
 | PATCH | `/catalog/products/:productId` | Update |
 | DELETE | `/catalog/products/:productId` | Delete or soft-deactivate if order history exists |
 | GET | `/catalog/products/:productId/variants` | Paginated variants + inventory |
@@ -36,8 +36,6 @@ Base paths:
 | DELETE | `/catalog/variants/:variantId` | Delete (blocked if `quantity > 0`) |
 | GET/POST | `/catalog/reference/colors` | List / create palette |
 | GET/POST | `/catalog/reference/sizes` | List / create sizes |
-| GET/POST/PATCH/DELETE | `/catalog/products/:productId/images` … | See `catalog.routes.ts` |
-
 ## Inventory API summary
 
 | Method | Path | Description |

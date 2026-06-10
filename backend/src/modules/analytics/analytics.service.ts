@@ -190,6 +190,7 @@ export async function getProfitLines(input: ProfitLinesQuery) {
       invoice_number: string | null;
       sku: string;
       product_name: string;
+      color_name: string | null;
       quantity: number;
       line_total: string;
       unit_cost_wac: string | null;
@@ -216,6 +217,7 @@ export async function getProfitLines(input: ProfitLinesQuery) {
       o.invoice_number,
       pv.sku,
       p.name AS product_name,
+      c.name AS color_name,
       oi.quantity,
       oi.line_total::text AS line_total,
       w.unit_cost_wac::text AS unit_cost_wac,
@@ -224,6 +226,7 @@ export async function getProfitLines(input: ProfitLinesQuery) {
     INNER JOIN orders o ON o.id = oi.order_id
     INNER JOIN product_variants pv ON pv.id = oi.variant_id
     INNER JOIN products p ON p.id = pv.product_id
+    LEFT JOIN colors c ON c.id = pv.color_id
     LEFT JOIN wac w ON w.variant_id = oi.variant_id
     WHERE ${baseWhere}
     ORDER BY o.confirmed_at DESC, oi.id ASC
@@ -237,6 +240,7 @@ export async function getProfitLines(input: ProfitLinesQuery) {
     invoiceNumber: r.invoice_number,
     sku: r.sku,
     productName: r.product_name,
+    colorName: r.color_name,
     quantity: r.quantity,
     lineTotal: Number(r.line_total),
     unitCostWac: r.unit_cost_wac === null ? null : Number(r.unit_cost_wac),
@@ -258,6 +262,7 @@ export async function getInventoryValuation(input: InventoryValuationQuery) {
       ? Prisma.sql`AND (
           pv.sku ILIKE ${"%" + q + "%"}
           OR p.name ILIKE ${"%" + q + "%"}
+          OR COALESCE(c.name, '') ILIKE ${"%" + q + "%"}
         )`
       : Prisma.empty;
 
@@ -279,6 +284,7 @@ export async function getInventoryValuation(input: InventoryValuationQuery) {
     FROM inventory_balances ib
     INNER JOIN product_variants pv ON pv.id = ib.variant_id
     INNER JOIN products p ON p.id = pv.product_id
+    LEFT JOIN colors c ON c.id = pv.color_id
     LEFT JOIN wac w ON w.variant_id = pv.id
     WHERE ib.quantity > 0
       ${searchClause}
@@ -291,6 +297,8 @@ export async function getInventoryValuation(input: InventoryValuationQuery) {
       variant_id: string;
       sku: string;
       product_name: string;
+      color_name: string | null;
+      size_label: string | null;
       quantity: number;
       unit_cost_wac: string | null;
       line_value: string;
@@ -313,12 +321,16 @@ export async function getInventoryValuation(input: InventoryValuationQuery) {
       pv.id AS variant_id,
       pv.sku,
       p.name AS product_name,
+      c.name AS color_name,
+      s.label AS size_label,
       ib.quantity,
       w.unit_cost_wac::text AS unit_cost_wac,
       (ib.quantity::numeric * COALESCE(w.unit_cost_wac, 0::numeric))::text AS line_value
     FROM inventory_balances ib
     INNER JOIN product_variants pv ON pv.id = ib.variant_id
     INNER JOIN products p ON p.id = pv.product_id
+    LEFT JOIN colors c ON c.id = pv.color_id
+    LEFT JOIN sizes s ON s.id = pv.size_id
     LEFT JOIN wac w ON w.variant_id = pv.id
     WHERE ib.quantity > 0
       ${searchClause}
@@ -330,6 +342,8 @@ export async function getInventoryValuation(input: InventoryValuationQuery) {
     variantId: r.variant_id,
     sku: r.sku,
     productName: r.product_name,
+    colorName: r.color_name,
+    sizeLabel: r.size_label,
     quantityOnHand: r.quantity,
     unitCostWac: r.unit_cost_wac === null ? null : Number(r.unit_cost_wac),
     valuation: Number(r.line_value),
@@ -371,6 +385,7 @@ export async function getFastMovingProducts(input: FastMovingQuery) {
       variant_id: string;
       sku: string;
       product_name: string;
+      color_name: string | null;
       units_sold: string;
       revenue: string;
     }[]
@@ -379,19 +394,21 @@ export async function getFastMovingProducts(input: FastMovingQuery) {
       pv.id AS variant_id,
       pv.sku,
       p.name AS product_name,
+      c.name AS color_name,
       SUM(oi.quantity::numeric)::text AS units_sold,
       SUM(oi.line_total::numeric)::text AS revenue
     FROM order_items oi
     INNER JOIN orders o ON o.id = oi.order_id
     INNER JOIN product_variants pv ON pv.id = oi.variant_id
     INNER JOIN products p ON p.id = pv.product_id
+    LEFT JOIN colors c ON c.id = pv.color_id
     WHERE o.document_type = 'SALE'::"OrderDocumentType"
       AND o.status = 'CONFIRMED'::"OrderStatus"
       AND o.confirmed_at >= ${start}
       AND o.confirmed_at < ${endExclusive}
       ${customerClause(input.customerId)}
       ${categoryClause(input.categoryId)}
-    GROUP BY pv.id, pv.sku, p.name
+    GROUP BY pv.id, pv.sku, p.name, c.name
     ORDER BY SUM(oi.quantity::numeric) DESC, revenue DESC
     LIMIT ${take}
   `);
@@ -401,6 +418,7 @@ export async function getFastMovingProducts(input: FastMovingQuery) {
       variantId: r.variant_id,
       sku: r.sku,
       productName: r.product_name,
+      colorName: r.color_name,
       unitsSold: Number(r.units_sold),
       revenue: Number(r.revenue),
     })),
@@ -440,6 +458,7 @@ export async function getDeadStock(input: DeadStockQuery) {
       variant_id: string;
       sku: string;
       product_name: string;
+      color_name: string | null;
       quantity: number;
       last_sale_at: Date | null;
       days_since_sale: string | null;
@@ -449,6 +468,7 @@ export async function getDeadStock(input: DeadStockQuery) {
       pv.id AS variant_id,
       pv.sku,
       p.name AS product_name,
+      c.name AS color_name,
       ib.quantity,
       ls.last_sale AS last_sale_at,
       CASE
@@ -458,6 +478,7 @@ export async function getDeadStock(input: DeadStockQuery) {
     FROM inventory_balances ib
     INNER JOIN product_variants pv ON pv.id = ib.variant_id
     INNER JOIN products p ON p.id = pv.product_id
+    LEFT JOIN colors c ON c.id = pv.color_id
     LEFT JOIN LATERAL (
       SELECT MAX(o2.confirmed_at) AS last_sale
       FROM order_items oi2
@@ -479,6 +500,7 @@ export async function getDeadStock(input: DeadStockQuery) {
       variantId: r.variant_id,
       sku: r.sku,
       productName: r.product_name,
+      colorName: r.color_name,
       quantityOnHand: r.quantity,
       lastSaleAt: r.last_sale_at ? r.last_sale_at.toISOString() : null,
       daysSinceSale: r.days_since_sale === null ? null : Number(r.days_since_sale),
