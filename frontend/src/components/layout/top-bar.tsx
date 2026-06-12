@@ -24,10 +24,11 @@ export function TopBar({ title }: { title: string }) {
   }
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b border-border/70 bg-background/80 px-4 backdrop-blur-md supports-[backdrop-filter]:bg-background/70 sm:px-6">
+    <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b border-primary/15 bg-background/80 px-4 backdrop-blur-md supports-[backdrop-filter]:bg-background/70 sm:px-6">
       <MobileNavTrigger />
       <div className="min-w-0 flex-1">
         <h1 className="truncate text-sm font-semibold tracking-tight sm:text-base">
+          <span className="mr-2 inline-block size-1.5 shrink-0 rounded-full bg-primary" aria-hidden />
           {title}
         </h1>
       </div>

@@ -28,6 +28,8 @@ export type PricingLineInput = {
   unitPrice: Prisma.Decimal;
   gstEnabled: boolean;
   gstPricingMode: GstPricingMode;
+  isGiveaway?: boolean;
+  giveawayReason?: string | null;
 } & GstRates &
   ItemDiscountSpec;
 
@@ -37,6 +39,8 @@ export type FinalPricingLine = ComputedLine & {
   itemDiscountAmount: Prisma.Decimal;
   cartDiscountAllocated: Prisma.Decimal;
   grossAmount: Prisma.Decimal;
+  isGiveaway: boolean;
+  giveawayReason: string | null;
 };
 
 export type PricingQuoteResult = {
@@ -107,20 +111,23 @@ export function resolveItemDiscountAmount(
   return { amount: new Prisma.Decimal(0), type: null, value: null };
 }
 
-function applyCartSliceToLine(
-  line: ComputedLine & {
-    itemDiscountType: RetailDiscountType | null;
-    itemDiscountValue: Prisma.Decimal | null;
-    itemDiscountAmount: Prisma.Decimal;
-    grossAmount: Prisma.Decimal;
-  },
-  cartSlice: Prisma.Decimal,
-): FinalPricingLine {
+type PreCartLine = ComputedLine & {
+  itemDiscountType: RetailDiscountType | null;
+  itemDiscountValue: Prisma.Decimal | null;
+  itemDiscountAmount: Prisma.Decimal;
+  grossAmount: Prisma.Decimal;
+  isGiveaway: boolean;
+  giveawayReason: string | null;
+};
+
+function applyCartSliceToLine(line: PreCartLine, cartSlice: Prisma.Decimal): FinalPricingLine {
+  const meta = { isGiveaway: false as const, giveawayReason: null as string | null };
   if (cartSlice.lte(0)) {
     return {
       ...line,
       cartDiscountAllocated: new Prisma.Decimal(0),
       lineDiscount: D4(line.itemDiscountAmount),
+      ...meta,
     };
   }
 
@@ -142,6 +149,7 @@ function applyCartSliceToLine(
       sgstAmount: new Prisma.Decimal(0),
       igstAmount: new Prisma.Decimal(0),
       lineTotal: newTotal,
+      ...meta,
     };
   }
 
@@ -159,6 +167,7 @@ function applyCartSliceToLine(
       taxableValue: newTaxable,
       ...gstParts,
       lineTotal: D4(newTaxable.plus(gstParts.cgstAmount).plus(gstParts.sgstAmount).plus(gstParts.igstAmount)),
+      ...meta,
     };
   }
 
@@ -173,6 +182,7 @@ function applyCartSliceToLine(
     taxableValue: newTaxable,
     ...gstParts,
     lineTotal: newLineTotal,
+    ...meta,
   };
 }
 
@@ -212,20 +222,14 @@ function resolveCartDiscountAmount(
   return { amount: new Prisma.Decimal(0), type: null, value: null };
 }
 
-function distributeCartDiscount(
-  lines: (ComputedLine & {
-    itemDiscountType: RetailDiscountType | null;
-    itemDiscountValue: Prisma.Decimal | null;
-    itemDiscountAmount: Prisma.Decimal;
-    grossAmount: Prisma.Decimal;
-  })[],
-  cartAmount: Prisma.Decimal,
-): FinalPricingLine[] {
+function distributeCartDiscount(lines: PreCartLine[], cartAmount: Prisma.Decimal): FinalPricingLine[] {
   if (cartAmount.lte(0) || lines.length === 0) {
     return lines.map((ln) => ({
       ...ln,
       cartDiscountAllocated: new Prisma.Decimal(0),
       lineDiscount: D4(ln.itemDiscountAmount),
+      isGiveaway: ln.isGiveaway ?? false,
+      giveawayReason: ln.giveawayReason ?? null,
     }));
   }
 
@@ -238,6 +242,8 @@ function distributeCartDiscount(
       ...ln,
       cartDiscountAllocated: new Prisma.Decimal(0),
       lineDiscount: D4(ln.itemDiscountAmount),
+      isGiveaway: ln.isGiveaway ?? false,
+      giveawayReason: ln.giveawayReason ?? null,
     }));
   }
 
@@ -253,7 +259,43 @@ function distributeCartDiscount(
     }
   }
 
-  return lines.map((ln, i) => applyCartSliceToLine(ln, allocations[i] ?? new Prisma.Decimal(0)));
+  return lines.map((ln, i) => {
+    const sliced = applyCartSliceToLine(ln, allocations[i] ?? new Prisma.Decimal(0));
+    return {
+      ...sliced,
+      isGiveaway: ln.isGiveaway ?? false,
+      giveawayReason: ln.giveawayReason ?? null,
+    };
+  });
+}
+
+function buildGiveawayLine(
+  input: PricingLineInput,
+  orderGst: { gstEnabled: boolean; gstPricingMode: GstPricingMode },
+): PreCartLine {
+  const grossAmount = D4(new Prisma.Decimal(input.quantity).mul(input.unitPrice));
+  return {
+    variantId: input.variantId,
+    quantity: input.quantity,
+    unitPrice: input.unitPrice,
+    lineDiscount: new Prisma.Decimal(0),
+    taxableValue: new Prisma.Decimal(0),
+    cgstRate: input.cgstRate,
+    sgstRate: input.sgstRate,
+    igstRate: input.igstRate,
+    cgstAmount: new Prisma.Decimal(0),
+    sgstAmount: new Prisma.Decimal(0),
+    igstAmount: new Prisma.Decimal(0),
+    lineTotal: new Prisma.Decimal(0),
+    gstEnabled: orderGst.gstEnabled,
+    gstPricingMode: input.gstPricingMode ?? orderGst.gstPricingMode,
+    itemDiscountType: null,
+    itemDiscountValue: null,
+    itemDiscountAmount: new Prisma.Decimal(0),
+    grossAmount,
+    isGiveaway: true,
+    giveawayReason: input.giveawayReason?.trim() || null,
+  };
 }
 
 function aggregateTotals(
@@ -310,7 +352,10 @@ export function computePosPricing(
     throw new AppError(400, "EMPTY_CART", "Add at least one line");
   }
 
-  const preCart = lines.map((input) => {
+  const preCart: PreCartLine[] = lines.map((input) => {
+    if (input.isGiveaway) {
+      return buildGiveawayLine(input, orderGst);
+    }
     const itemDisc = resolveItemDiscountAmount(input.quantity, input.unitPrice, input);
     const grossAmount = D4(new Prisma.Decimal(input.quantity).mul(input.unitPrice));
     const computed = computeLine({
@@ -330,16 +375,49 @@ export function computePosPricing(
       itemDiscountValue: itemDisc.value,
       itemDiscountAmount: itemDisc.amount,
       grossAmount,
+      isGiveaway: false,
+      giveawayReason: null,
     };
   });
 
-  const baseAfterItem = preCart.reduce((s, ln) => s.plus(ln.lineTotal), new Prisma.Decimal(0));
+  const paidIndices: number[] = [];
+  const paidPreCart = preCart.filter((ln, i) => {
+    if (!ln.isGiveaway) {
+      paidIndices.push(i);
+      return true;
+    }
+    return false;
+  });
+  const baseAfterItem = paidPreCart.reduce(
+    (s, ln) => s.plus(ln.lineTotal),
+    new Prisma.Decimal(0),
+  );
   const cartResolved = resolveCartDiscountAmount(baseAfterItem, cartSpec);
-  const finalLines = distributeCartDiscount(preCart, cartResolved.amount);
-  const totals = aggregateTotals(finalLines, cartResolved);
+  const paidFinal = distributeCartDiscount(paidPreCart, cartResolved.amount);
+  const finalLines: FinalPricingLine[] = preCart.map((ln): FinalPricingLine => {
+    if (ln.isGiveaway) {
+      return {
+        ...ln,
+        cartDiscountAllocated: new Prisma.Decimal(0),
+        lineDiscount: new Prisma.Decimal(0),
+      };
+    }
+    return {
+      ...ln,
+      cartDiscountAllocated: new Prisma.Decimal(0),
+      lineDiscount: D4(ln.itemDiscountAmount),
+    };
+  });
+  for (let j = 0; j < paidIndices.length; j++) {
+    finalLines[paidIndices[j]!] = paidFinal[j]!;
+  }
+  const classifiedLines = finalLines.map((ln) =>
+    !ln.isGiveaway && ln.lineTotal.lte(0) ? { ...ln, isGiveaway: true } : ln,
+  );
+  const totals = aggregateTotals(classifiedLines, cartResolved);
 
   return {
-    lines: finalLines,
+    lines: classifiedLines,
     totals,
     cartDiscount: {
       type: cartResolved.type,
@@ -372,6 +450,8 @@ export function serializePricingQuote(quote: PricingQuoteResult) {
       sgstAmount: dec(ln.sgstAmount),
       igstAmount: dec(ln.igstAmount),
       lineTotal: dec(ln.lineTotal),
+      isGiveaway: ln.isGiveaway,
+      giveawayReason: ln.giveawayReason,
     })),
     totals: {
       grossSubtotal: dec(quote.totals.grossSubtotal),
@@ -394,7 +474,11 @@ export function serializePricingQuote(quote: PricingQuoteResult) {
   };
 }
 
-export function mapFinalLineToOrderItemCreate(ln: FinalPricingLine) {
+export function mapFinalLineToOrderItemCreate(
+  ln: FinalPricingLine,
+  unitCostSnapshot?: Prisma.Decimal | null,
+) {
+  const isGiveaway = ln.isGiveaway || ln.lineTotal.lte(0);
   return {
     variantId: ln.variantId,
     quantity: ln.quantity,
@@ -412,6 +496,9 @@ export function mapFinalLineToOrderItemCreate(ln: FinalPricingLine) {
     sgstAmount: ln.sgstAmount,
     igstAmount: ln.igstAmount,
     lineTotal: ln.lineTotal,
+    isGiveaway,
+    giveawayReason: ln.giveawayReason,
+    unitCostSnapshot: isGiveaway ? (unitCostSnapshot ?? new Prisma.Decimal(0)) : null,
   };
 }
 

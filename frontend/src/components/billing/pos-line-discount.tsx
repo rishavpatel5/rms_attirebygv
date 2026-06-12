@@ -11,6 +11,8 @@ export function PosLineDiscount({ line }: Props) {
   const setLineItemDiscount = useBillingStore((s) => s.setLineItemDiscount);
   const clearLineItemDiscount = useBillingStore((s) => s.clearLineItemDiscount);
 
+  if (line.isGiveaway) return null;
+
   const mode: "percent" | "flat" =
     line.itemDiscountType === "FLAT_AMOUNT" ? "flat" : "percent";
 

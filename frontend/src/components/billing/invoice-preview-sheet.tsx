@@ -42,8 +42,6 @@ export function InvoicePreviewSheet() {
   const posCustomerSummary = useBillingStore((s) => s.posCustomerSummary);
   const { quote, loading } = useBillingQuote();
 
-  const quoteByVariant = new Map(quote?.lines.map((l) => [l.variantId, l]) ?? []);
-
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetContent
@@ -73,12 +71,19 @@ export function InvoicePreviewSheet() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {lines.map((l) => {
-                const ql = quoteByVariant.get(l.variantId);
+              {lines.map((l, index) => {
+                const ql = quote?.lines[index];
                 return (
                   <TableRow key={l.id}>
                     <TableCell>
-                      <div className="font-medium">{l.name}</div>
+                      <div className="font-medium">
+                        {l.name}
+                        {l.isGiveaway ? (
+                          <span className="ml-1.5 text-xs font-semibold text-amber-700 dark:text-amber-400">
+                            (FREE)
+                          </span>
+                        ) : null}
+                      </div>
                       <div className="text-xs text-muted-foreground">
                         <ColorLabel colorName={l.colorName}>{l.variantLabel}</ColorLabel>
                       </div>

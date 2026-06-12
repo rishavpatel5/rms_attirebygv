@@ -44,6 +44,8 @@ const posLineSchema = z.object({
   variantId: z.string().cuid(),
   quantity: z.number().int().positive(),
   unitPrice: decimalLike,
+  isGiveaway: z.boolean().optional().default(false),
+  giveawayReason: z.string().max(500).nullable().optional(),
   /** @deprecated Prefer itemDiscountType + itemDiscountValue */
   lineDiscount: decimalLike.optional().default(0),
   itemDiscountType: retailDiscountTypeSchema.optional().nullable(),
@@ -172,6 +174,8 @@ export function mapPosLineRates(line: z.infer<typeof posLineSchema>) {
     variantId: line.variantId,
     quantity: line.quantity,
     unitPrice: toDec(line.unitPrice),
+    isGiveaway: line.isGiveaway ?? false,
+    giveawayReason: line.giveawayReason?.trim() || null,
     lineDiscount: toDec(line.lineDiscount ?? 0),
     itemDiscountType: line.itemDiscountType ?? null,
     itemDiscountValue:

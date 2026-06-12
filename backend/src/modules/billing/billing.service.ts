@@ -22,7 +22,9 @@ import {
   mapFinalLineToOrderItemCreate,
   mapQuoteTotalsToOrder,
   serializePricingQuote,
+  type FinalPricingLine,
 } from "../../lib/pricing-engine.js";
+import { resolveVariantUnitCosts } from "../../lib/variant-cost.js";
 import type {
   CreditNoteBody,
   DraftOrderBody,
@@ -41,6 +43,20 @@ import { getInvoiceDocument } from "./invoice/invoice.service.js";
 
 function d2(d: Prisma.Decimal): Prisma.Decimal {
   return d.toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+}
+
+async function mapPricingLinesToOrderItems(
+  tx: Tx,
+  lines: FinalPricingLine[],
+) {
+  const giveawayVariantIds = lines.filter((ln) => ln.isGiveaway).map((ln) => ln.variantId);
+  const costMap = await resolveVariantUnitCosts(tx, giveawayVariantIds);
+  return lines.map((ln) =>
+    mapFinalLineToOrderItemCreate(
+      ln,
+      ln.isGiveaway ? costMap.get(ln.variantId) : null,
+    ),
+  );
 }
 
 function assertPaymentTotalsSale(
@@ -254,7 +270,7 @@ export async function checkoutPos(input: {
         confirmedAt: new Date(),
         offerId: body.offerId ?? null,
         items: {
-          create: pricing.lines.map((ln) => mapFinalLineToOrderItemCreate(ln)),
+          create: await mapPricingLinesToOrderItems(tx, pricing.lines),
         },
         payments: {
           create: payments.map((p) => ({
@@ -316,7 +332,7 @@ export async function createDraftOrder(input: {
         createdById,
         offerId: body.offerId ?? null,
         items: {
-          create: pricing.lines.map((ln) => mapFinalLineToOrderItemCreate(ln)),
+          create: await mapPricingLinesToOrderItems(tx, pricing.lines),
         },
       },
       select: { id: true },
@@ -742,7 +758,7 @@ export async function createExchange(input: {
         createdById,
         confirmedAt: new Date(),
         items: {
-          create: pricing.lines.map((ln) => mapFinalLineToOrderItemCreate(ln)),
+          create: await mapPricingLinesToOrderItems(tx, pricing.lines),
         },
         payments: {
           create: payments.map((p) => ({

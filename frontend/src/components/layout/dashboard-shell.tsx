@@ -42,7 +42,7 @@ export function DashboardShell() {
   const setMobileNavOpen = useUiStore((s) => s.setMobileNavOpen);
 
   return (
-    <div className="flex h-dvh w-full overflow-hidden bg-background">
+    <div className="flex h-dvh w-full overflow-hidden bg-background bg-[radial-gradient(ellipse_80%_50%_at_100%_0%,hsl(var(--primary)/0.04),transparent)]">
       {isLg ? <AppSidebar className="hidden shrink-0 lg:flex" /> : null}
       {!isLg ? (
         <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>

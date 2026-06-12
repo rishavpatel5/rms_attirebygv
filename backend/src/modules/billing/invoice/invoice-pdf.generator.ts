@@ -209,8 +209,12 @@ function renderInvoice(pdf: InstanceType<typeof PDFDocument>, doc: InvoiceDocume
     const gstAmt = line.gstAmount;
     const discAmt = num(line.itemDiscountAmount) + num(line.cartDiscountAllocated);
 
+    const productLabel = line.isGiveaway
+      ? `${line.productName} (FREE)`
+      : line.productName;
+
     const cells: [string, number, "left" | "right"][] = [
-      [line.productName, cols.product, "left"],
+      [productLabel, cols.product, "left"],
       [line.variantLabel, cols.variant, "left"],
       [String(line.quantity), cols.qty, "right"],
       [inr(line.unitPrice), cols.rate, "right"],

@@ -60,6 +60,11 @@ export type ProfitSummary = {
   cogs: number;
   grossProfit: number;
   marginPct: number;
+  giveawayUnits: number;
+  giveawayCost: number;
+  promotionalExpense: number;
+  discountCost: number;
+  avgDiscountPct: number;
   note: string;
 };
 
@@ -89,6 +94,7 @@ export type ProfitLine = {
   colorName: string | null;
   quantity: number;
   lineTotal: number;
+  isGiveaway: boolean;
   unitCostWac: number | null;
   cogs: number;
   lineGrossProfit: number;
@@ -286,6 +292,9 @@ export type OrderReportLine = {
   igstAmount: string;
   gstAmount: string;
   lineTotal: string;
+  isGiveaway: boolean;
+  giveawayReason: string | null;
+  unitCostSnapshot: string | null;
 };
 
 export type OrderReportRow = {

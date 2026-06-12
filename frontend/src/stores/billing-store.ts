@@ -30,6 +30,8 @@ export type BillingLine = {
   igstRate: number;
   itemDiscountType: RetailDiscountType | null;
   itemDiscountValue: number | null;
+  isGiveaway: boolean;
+  giveawayReason: string | null;
 };
 
 type BillingState = {
@@ -70,9 +72,16 @@ type BillingState = {
     value: number,
   ) => void;
   clearLineItemDiscount: (lineId: string) => void;
+  setLineGiveaway: (lineId: string, isGiveaway: boolean) => void;
+  setLineGiveawayReason: (lineId: string, reason: string) => void;
   setCartDiscount: (type: RetailDiscountType, value: number) => void;
   clearCartDiscount: () => void;
-  addOrIncrementLine: (line: Omit<BillingLine, "id" | "qty" | "itemDiscountType" | "itemDiscountValue"> & { qty?: number }) => void;
+  addOrIncrementLine: (
+    line: Omit<
+      BillingLine,
+      "id" | "qty" | "itemDiscountType" | "itemDiscountValue" | "isGiveaway" | "giveawayReason"
+    > & { qty?: number; isGiveaway?: boolean },
+  ) => void;
   setQty: (lineId: string, qty: number) => void;
   removeLine: (lineId: string) => void;
   clearCart: () => void;
@@ -169,12 +178,35 @@ export const useBillingStore = create<BillingState>((set, get) => ({
           : l,
       ),
     }),
+  setLineGiveaway: (lineId, isGiveaway) =>
+    set({
+      lines: get().lines.map((l) =>
+        l.id === lineId
+          ? {
+              ...l,
+              isGiveaway,
+              giveawayReason: isGiveaway ? l.giveawayReason : null,
+              itemDiscountType: isGiveaway ? null : l.itemDiscountType,
+              itemDiscountValue: isGiveaway ? null : l.itemDiscountValue,
+            }
+          : l,
+      ),
+    }),
+  setLineGiveawayReason: (lineId, giveawayReason) =>
+    set({
+      lines: get().lines.map((l) =>
+        l.id === lineId ? { ...l, giveawayReason: giveawayReason.trim() || null } : l,
+      ),
+    }),
   setCartDiscount: (cartDiscountType, cartDiscountValue) =>
     set({ cartDiscountType, cartDiscountValue }),
   clearCartDiscount: () => set({ ...defaultCartDiscount }),
   addOrIncrementLine: (payload) => {
     const { lines } = get();
-    const match = lines.find((l) => l.variantId === payload.variantId);
+    const isGiveaway = payload.isGiveaway ?? false;
+    const match = lines.find(
+      (l) => l.variantId === payload.variantId && l.isGiveaway === isGiveaway,
+    );
     const addQty = payload.qty ?? 1;
     if (match) {
       set({
@@ -206,6 +238,8 @@ export const useBillingStore = create<BillingState>((set, get) => ({
           igstRate: payload.igstRate,
           itemDiscountType: null,
           itemDiscountValue: null,
+          isGiveaway,
+          giveawayReason: null,
         },
       ],
     });
@@ -253,10 +287,16 @@ export function buildPosQuotePayload(input: {
       cgstRate: l.cgstRate,
       sgstRate: l.sgstRate,
       igstRate: l.igstRate,
-      ...(l.itemDiscountType && l.itemDiscountValue != null
+      ...(l.itemDiscountType && l.itemDiscountValue != null && !l.isGiveaway
         ? {
             itemDiscountType: l.itemDiscountType,
             itemDiscountValue: String(l.itemDiscountValue),
+          }
+        : {}),
+      ...(l.isGiveaway
+        ? {
+            isGiveaway: true,
+            ...(l.giveawayReason ? { giveawayReason: l.giveawayReason } : {}),
           }
         : {}),
     })),

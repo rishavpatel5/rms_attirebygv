@@ -18,6 +18,8 @@ export type PosQuoteLine = {
   sgstAmount: string;
   igstAmount: string;
   lineTotal: string;
+  isGiveaway: boolean;
+  giveawayReason: string | null;
 };
 
 export type PosQuoteTotals = {

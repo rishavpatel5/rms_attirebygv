@@ -13,6 +13,7 @@ import { ColorLabel } from "@/components/catalog/color-dot";
 import { PosCartSummary } from "@/components/billing/pos-cart-summary";
 import { PosCheckoutCustomerBlock } from "@/components/billing/pos-checkout-customer";
 import { PosLineDiscount } from "@/components/billing/pos-line-discount";
+import { PosLineGiveaway } from "@/components/billing/pos-line-giveaway";
 import { useBillingQuote } from "@/hooks/use-billing-quote";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -494,8 +495,17 @@ export function BillingPos() {
                               <ColorLabel colorName={l.colorName}>{l.variantLabel}</ColorLabel>
                             </div>
                             <div className="mt-1 text-xs tabular-nums text-muted-foreground">
-                              {money(l.unitPrice)} each · avail {l.availableStock}
+                              {l.isGiveaway ? (
+                                <span className="font-medium text-amber-700 dark:text-amber-400">
+                                  FREE · was {money(l.unitPrice)}
+                                </span>
+                              ) : (
+                                <span>
+                                  {money(l.unitPrice)} each · avail {l.availableStock}
+                                </span>
+                              )}
                             </div>
+                            <PosLineGiveaway line={l} />
                             <PosLineDiscount line={l} />
                           </TableCell>
                           <TableCell className="text-right">

@@ -492,6 +492,9 @@ model OrderItem {
   sgstAmount         Decimal  @default(0) @map("sgst_amount") @db.Decimal(14, 4)
   igstAmount         Decimal  @default(0) @map("igst_amount") @db.Decimal(14, 4)
   lineTotal          Decimal  @map("line_total") @db.Decimal(14, 4)
+  isGiveaway         Boolean  @default(false) @map("is_giveaway")
+  unitCostSnapshot   Decimal? @map("unit_cost_snapshot") @db.Decimal(14, 4)
+  giveawayReason     String?  @map("giveaway_reason")
   sourceOrderItemId  String?  @map("source_order_item_id")
   createdAt          DateTime @default(now()) @map("created_at")
 

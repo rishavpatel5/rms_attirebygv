@@ -352,9 +352,19 @@ function OrderLinesDetail({
           {lines.map((ln) => (
             <TableRow key={ln.id}>
               <TableCell>
-                <div className="text-sm font-medium">{ln.productName}</div>
+                <div className="text-sm font-medium">
+                  {ln.productName}
+                  {ln.isGiveaway ? (
+                    <span className="ml-1.5 text-xs font-semibold text-amber-700 dark:text-amber-400">
+                      (FREE)
+                    </span>
+                  ) : null}
+                </div>
                 <div className="text-xs text-muted-foreground">
                   <ColorLabel colorName={ln.colorName}>{ln.variantLabel}</ColorLabel>
+                  {ln.isGiveaway && ln.giveawayReason ? (
+                    <span className="mt-0.5 block">{ln.giveawayReason}</span>
+                  ) : null}
                 </div>
               </TableCell>
               <TableCell className="font-mono text-xs">

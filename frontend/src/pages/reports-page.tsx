@@ -363,7 +363,7 @@ function ProfitPanel({ from, to }: { from: string; to: string }) {
       {loading ? <p className="text-sm text-muted-foreground">Loading…</p> : null}
 
       {summary ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-7">
           <Card className="border-border/60">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm text-muted-foreground">Revenue</CardTitle>
@@ -372,7 +372,7 @@ function ProfitPanel({ from, to }: { from: string; to: string }) {
           </Card>
           <Card className="border-border/60">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm text-muted-foreground">COGS (WAC)</CardTitle>
+              <CardTitle className="text-sm text-muted-foreground">COGS</CardTitle>
             </CardHeader>
             <CardContent className="text-xl font-semibold tabular-nums">{fmtInr(summary.cogs)}</CardContent>
           </Card>
@@ -387,6 +387,34 @@ function ProfitPanel({ from, to }: { from: string; to: string }) {
               <CardTitle className="text-sm text-muted-foreground">Margin</CardTitle>
             </CardHeader>
             <CardContent className="text-xl font-semibold tabular-nums">{summary.marginPct.toFixed(1)}%</CardContent>
+          </Card>
+          <Card className="border-border/60">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm text-muted-foreground">Giveaway units</CardTitle>
+            </CardHeader>
+            <CardContent className="text-xl font-semibold tabular-nums">{summary.giveawayUnits}</CardContent>
+          </Card>
+          <Card className="border-border/60">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm text-muted-foreground">Promotional cost</CardTitle>
+            </CardHeader>
+            <CardContent className="text-xl font-semibold tabular-nums text-amber-700 dark:text-amber-400">
+              {fmtInr(summary.promotionalExpense)}
+            </CardContent>
+          </Card>
+          <Card className="border-border/60">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm text-muted-foreground">Discounts</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-1">
+              <div className="text-xl font-semibold tabular-nums">
+                {summary.avgDiscountPct.toFixed(1)}%
+                <span className="ml-1.5 text-sm font-normal text-muted-foreground">avg off list</span>
+              </div>
+              <div className="text-sm tabular-nums text-emerald-700 dark:text-emerald-400">
+                {fmtInr(summary.discountCost)} discount cost
+              </div>
+            </CardContent>
           </Card>
         </div>
       ) : null}
@@ -407,6 +435,7 @@ function ProfitPanel({ from, to }: { from: string; to: string }) {
                 <TableHead>Invoice</TableHead>
                 <TableHead>SKU</TableHead>
                 <TableHead>Product</TableHead>
+                <TableHead>Type</TableHead>
                 <TableHead className="text-right">Qty</TableHead>
                 <TableHead className="text-right">Revenue</TableHead>
                 <TableHead className="text-right">COGS</TableHead>
@@ -424,6 +453,13 @@ function ProfitPanel({ from, to }: { from: string; to: string }) {
                     <ColorLabel colorName={row.colorName}>{row.sku}</ColorLabel>
                   </TableCell>
                   <TableCell className="max-w-[200px] truncate">{row.productName}</TableCell>
+                  <TableCell className="text-xs">
+                    {row.isGiveaway ? (
+                      <span className="font-medium text-amber-700 dark:text-amber-400">Giveaway</span>
+                    ) : (
+                      "Sale"
+                    )}
+                  </TableCell>
                   <TableCell className="text-right tabular-nums">{row.quantity}</TableCell>
                   <TableCell className="text-right tabular-nums">{fmtInr(row.lineTotal)}</TableCell>
                   <TableCell className="text-right tabular-nums">{fmtInr(row.cogs)}</TableCell>

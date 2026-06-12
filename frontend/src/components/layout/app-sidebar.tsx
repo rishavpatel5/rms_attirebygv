@@ -50,8 +50,8 @@ function NavItemLink({
           "group flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm transition-colors",
           collapsed && "justify-center px-2",
           isActive
-            ? "bg-primary text-primary-foreground shadow-sm"
-            : "text-muted-foreground hover:bg-muted hover:text-foreground",
+            ? "border-l-2 border-primary-foreground/90 bg-primary text-primary-foreground shadow-sm"
+            : "border-l-2 border-transparent text-muted-foreground hover:bg-accent hover:text-accent-foreground",
         )
       }
     >
@@ -113,12 +113,12 @@ export function AppSidebar({ className }: { className?: string }) {
   return (
     <aside
       className={cn(
-        "flex h-full flex-col border-r border-border bg-card",
+        "flex h-full flex-col border-r border-primary/10 bg-card",
         collapsed ? "w-[72px]" : "w-[260px]",
         className,
       )}
     >
-      <div className="flex h-14 shrink-0 items-center border-b border-border px-3">
+      <div className="relative flex h-14 shrink-0 items-center border-b border-primary/10 px-3 after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-gradient-to-r after:from-primary after:via-primary/40 after:to-transparent after:opacity-50">
         {!collapsed ? (
           <div className="min-w-0 flex-1">
             <img
@@ -150,7 +150,7 @@ export function AppSidebar({ className }: { className?: string }) {
         <nav className="flex flex-col gap-5 p-2 pb-4">
           <div>
             {!collapsed && (
-              <p className="mb-1.5 px-2.5 text-[11px] font-medium text-muted-foreground">
+              <p className="mb-1.5 px-2.5 text-[11px] font-semibold uppercase tracking-wider text-primary/80">
                 Daily workflow
               </p>
             )}
@@ -163,7 +163,7 @@ export function AppSidebar({ className }: { className?: string }) {
 
           <div>
             {!collapsed && (
-              <p className="mb-1.5 px-2.5 text-[11px] font-medium text-muted-foreground">
+              <p className="mb-1.5 px-2.5 text-[11px] font-semibold uppercase tracking-wider text-primary/80">
                 Manage
               </p>
             )}

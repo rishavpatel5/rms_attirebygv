@@ -40,8 +40,9 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md border-border/60 shadow-lg">
+    <div className="brand-page-bg flex min-h-dvh items-center justify-center p-4">
+      <Card className="w-full max-w-md overflow-hidden border-primary/20 shadow-lg shadow-primary/5">
+        <div className="h-1 brand-header-accent" aria-hidden />
         <CardHeader className="items-center text-center">
           <img
             src={STORE_LOGO_PATH}

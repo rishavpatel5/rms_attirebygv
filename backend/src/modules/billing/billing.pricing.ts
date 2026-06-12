@@ -24,6 +24,8 @@ export function buildPosPricingQuote(body: CheckoutLikeBody) {
       variantId: mapped.variantId,
       quantity: mapped.quantity,
       unitPrice: mapped.unitPrice,
+      isGiveaway: mapped.isGiveaway,
+      giveawayReason: mapped.giveawayReason,
       itemDiscountType: mapped.itemDiscountType,
       itemDiscountValue: mapped.itemDiscountValue,
       lineDiscount: mapped.lineDiscount,

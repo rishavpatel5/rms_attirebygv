@@ -12,7 +12,7 @@ export type KpiCardProps = {
 
 export function KpiCard({ label, value, delta, positive = true, hint }: KpiCardProps) {
   return (
-    <Card className="border-border/60 shadow-sm">
+    <Card className="border-border/60 border-l-[3px] border-l-primary/50 shadow-sm">
       <CardContent className="p-5 sm:p-6">
         <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
           {label}

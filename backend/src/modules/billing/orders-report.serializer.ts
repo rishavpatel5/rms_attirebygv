@@ -121,6 +121,9 @@ export function serializeOrderForReport(row: OrderReportRow) {
         igstAmount: dec(it.igstAmount),
         gstAmount: dec(lineGst),
         lineTotal: dec(it.lineTotal),
+        isGiveaway: it.isGiveaway || it.lineTotal.lte(0),
+        giveawayReason: it.giveawayReason,
+        unitCostSnapshot: it.unitCostSnapshot != null ? dec4(it.unitCostSnapshot) : null,
       };
     }),
   };

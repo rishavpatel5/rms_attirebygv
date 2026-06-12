@@ -114,7 +114,15 @@ export async function getProfitSummary(input: DateRangeQuery) {
   const { start, endExclusive } = parseUtcDayRange(input.from, input.to);
 
   const [row] = await prisma.$queryRaw<
-    { revenue: string | null; cogs: string | null; line_qty: string | null }[]
+    {
+      revenue: string | null;
+      cogs: string | null;
+      line_qty: string | null;
+      giveaway_units: string | null;
+      giveaway_cost: string | null;
+      discount_cost: string | null;
+      gross_list: string | null;
+    }[]
   >(Prisma.sql`
     WITH wac AS (
       SELECT
@@ -131,10 +139,31 @@ export async function getProfitSummary(input: DateRangeQuery) {
     )
     SELECT
       COALESCE(SUM(oi.line_total::numeric), 0)::text AS revenue,
-      COALESCE(SUM(oi.quantity::numeric * COALESCE(w.unit_cost_wac, 0::numeric)), 0)::text AS cogs,
-      COALESCE(SUM(oi.quantity::numeric), 0)::text AS line_qty
+      COALESCE(SUM(
+        oi.quantity::numeric * (
+          CASE
+            WHEN oi.is_giveaway OR oi.line_total = 0 THEN
+              COALESCE(oi.unit_cost_snapshot, w.unit_cost_wac, pv.cost_price, 0::numeric)
+            ELSE COALESCE(w.unit_cost_wac, pv.cost_price, 0::numeric)
+          END
+        )
+      ), 0)::text AS cogs,
+      COALESCE(SUM(oi.quantity::numeric), 0)::text AS line_qty,
+      COALESCE(SUM(
+        CASE WHEN oi.is_giveaway OR oi.line_total = 0 THEN oi.quantity ELSE 0 END
+      ), 0)::text AS giveaway_units,
+      COALESCE(SUM(
+        CASE
+          WHEN oi.is_giveaway OR oi.line_total = 0 THEN
+            oi.quantity::numeric * COALESCE(oi.unit_cost_snapshot, w.unit_cost_wac, pv.cost_price, 0::numeric)
+          ELSE 0::numeric
+        END
+      ), 0)::text AS giveaway_cost,
+      COALESCE(SUM(oi.line_discount::numeric), 0)::text AS discount_cost,
+      COALESCE(SUM(oi.unit_price::numeric * oi.quantity::numeric), 0)::text AS gross_list
     FROM order_items oi
     INNER JOIN orders o ON o.id = oi.order_id
+    INNER JOIN product_variants pv ON pv.id = oi.variant_id
     LEFT JOIN wac w ON w.variant_id = oi.variant_id
     WHERE o.document_type = 'SALE'::"OrderDocumentType"
       AND o.status = 'CONFIRMED'::"OrderStatus"
@@ -146,14 +175,23 @@ export async function getProfitSummary(input: DateRangeQuery) {
 
   const revenue = Number(row?.revenue ?? 0);
   const cogs = Number(row?.cogs ?? 0);
+  const giveawayUnits = Number(row?.giveaway_units ?? 0);
+  const giveawayCost = Number(row?.giveaway_cost ?? 0);
+  const discountCost = Number(row?.discount_cost ?? 0);
+  const grossList = Number(row?.gross_list ?? 0);
   const grossProfit = revenue - cogs;
   return {
     revenue,
     cogs,
     grossProfit,
     marginPct: revenue > 0 ? (grossProfit / revenue) * 100 : 0,
+    giveawayUnits,
+    giveawayCost,
+    promotionalExpense: giveawayCost,
+    discountCost,
+    avgDiscountPct: grossList > 0 ? (discountCost / grossList) * 100 : 0,
     note:
-      "COGS uses weighted-average pre-GST unit cost (`unit_cost_exclusive`) from received purchase lines. Variants without purchase history contribute zero COGS.",
+      "Giveaway lines are any ₹0 bill lines (free toggle or full discount). Discount cost is total item + bill discounts on list price. Avg discount % = discount cost ÷ gross list value.",
   };
 }
 
@@ -193,7 +231,8 @@ export async function getProfitLines(input: ProfitLinesQuery) {
       color_name: string | null;
       quantity: number;
       line_total: string;
-      unit_cost_wac: string | null;
+      is_giveaway: boolean;
+      unit_cost: string | null;
       cogs: string;
     }[]
   >(Prisma.sql`
@@ -220,8 +259,23 @@ export async function getProfitLines(input: ProfitLinesQuery) {
       c.name AS color_name,
       oi.quantity,
       oi.line_total::text AS line_total,
-      w.unit_cost_wac::text AS unit_cost_wac,
-      (oi.quantity::numeric * COALESCE(w.unit_cost_wac, 0::numeric))::text AS cogs
+      (oi.is_giveaway OR oi.line_total = 0) AS is_giveaway,
+      (
+        CASE
+          WHEN oi.is_giveaway OR oi.line_total = 0 THEN
+            COALESCE(oi.unit_cost_snapshot, w.unit_cost_wac, pv.cost_price, 0::numeric)
+          ELSE COALESCE(w.unit_cost_wac, pv.cost_price, 0::numeric)
+        END
+      )::text AS unit_cost,
+      (
+        oi.quantity::numeric * (
+          CASE
+            WHEN oi.is_giveaway OR oi.line_total = 0 THEN
+              COALESCE(oi.unit_cost_snapshot, w.unit_cost_wac, pv.cost_price, 0::numeric)
+            ELSE COALESCE(w.unit_cost_wac, pv.cost_price, 0::numeric)
+          END
+        )
+      )::text AS cogs
     FROM order_items oi
     INNER JOIN orders o ON o.id = oi.order_id
     INNER JOIN product_variants pv ON pv.id = oi.variant_id
@@ -243,7 +297,8 @@ export async function getProfitLines(input: ProfitLinesQuery) {
     colorName: r.color_name,
     quantity: r.quantity,
     lineTotal: Number(r.line_total),
-    unitCostWac: r.unit_cost_wac === null ? null : Number(r.unit_cost_wac),
+    isGiveaway: r.is_giveaway,
+    unitCostWac: r.unit_cost === null ? null : Number(r.unit_cost),
     cogs: Number(r.cogs),
     lineGrossProfit: Number(r.line_total) - Number(r.cogs),
   }));
