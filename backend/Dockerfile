@@ -2,12 +2,17 @@
 #   docker build -f backend/Dockerfile -t attirebygv-api:local .
 #
 # On Railway: Root Directory = "/" and Dockerfile Path = "backend/Dockerfile".
+# Set DATABASE_URL, DIRECT_URL, JWT secrets, and CORS_ORIGINS in Railway variables
+# (prod Supabase project — never use the same URLs as local backend/.env dev DB).
 #
-# Run (needs env at runtime):
+# Run locally (needs env at runtime):
 #   docker run --env-file backend/.env -p 4000:4000 attirebygv-api:local
 #
-# On startup the container applies pending Prisma migrations
-# (prisma migrate deploy) and then starts the API.
+# Dev → prod schema flow:
+#   1. Local: backend/.env = dev DB → change schema.prisma → npm run db:migrate → test
+#   2. Git push (commits prisma/migrations/* + code)
+#   3. Railway rebuilds this image; on start, docker-entrypoint.sh runs
+#      `prisma migrate deploy` against Railway's prod DB, then starts the API.
 
 FROM node:20-bookworm-slim AS deps
 WORKDIR /app
@@ -38,6 +43,7 @@ COPY --from=deps /app/backend/assets ./backend/assets
 COPY --from=deps /app/backend/dist ./backend/dist
 COPY --from=deps /app/backend/prisma ./backend/prisma
 WORKDIR /app/backend
+COPY backend/docker-entrypoint.sh ./docker-entrypoint.sh
+RUN chmod +x ./docker-entrypoint.sh
 EXPOSE 4000
-# Apply pending migrations, then start the API. Railway injects PORT at runtime.
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]
+ENTRYPOINT ["./docker-entrypoint.sh"]
