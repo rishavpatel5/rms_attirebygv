@@ -1,9 +1,17 @@
-import { ChevronDown, ChevronRight, FileText } from "lucide-react";
+import { ChevronDown, ChevronRight, FileText, Trash2 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { ColorLabel } from "@/components/catalog/color-dot";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -15,6 +23,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { OrderInvoiceSheet } from "@/components/customers/order-invoice-sheet";
+import { voidSaleOrder } from "@/lib/billing-api";
 import { cn } from "@/lib/utils";
 import {
   fetchOrdersReport,
@@ -70,6 +79,9 @@ export function OrdersReportPanel({ from, to }: Props) {
   const [invoiceOrderId, setInvoiceOrderId] = useState<string | null>(null);
   const [invoiceLabel, setInvoiceLabel] = useState<string | null>(null);
   const [invoiceOpen, setInvoiceOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<OrderReportRow | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteErr, setDeleteErr] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -81,6 +93,8 @@ export function OrdersReportPanel({ from, to }: Props) {
         page,
         limit: 25,
         search: appliedSearch || undefined,
+        status: "CONFIRMED",
+        documentType: "SALE",
       });
       setRows(out.items);
       setMeta(out.meta);
@@ -99,6 +113,22 @@ export function OrdersReportPanel({ from, to }: Props) {
     void load();
   }, [load]);
 
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleteBusy(true);
+    setDeleteErr(null);
+    try {
+      await voidSaleOrder(deleteTarget.id);
+      setDeleteTarget(null);
+      if (expandedId === deleteTarget.id) setExpandedId(null);
+      await load();
+    } catch (e: unknown) {
+      setDeleteErr(e instanceof Error ? e.message : "Failed to delete sale");
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <Card className="border-border/60">
@@ -106,7 +136,7 @@ export function OrdersReportPanel({ from, to }: Props) {
           <CardTitle className="text-base">Order ledger</CardTitle>
           <CardDescription>
             Every booked sale in the selected UTC date range — line-level discounts, GST split, payments,
-            and customer. Open Invoice to view the full bill.
+            and customer. Delete mistaken entries to restore stock and sync revenue.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -170,7 +200,7 @@ export function OrdersReportPanel({ from, to }: Props) {
                   <TableHead className="text-right">GST</TableHead>
                   <TableHead className="text-right">Total</TableHead>
                   <TableHead>Payment</TableHead>
-                  <TableHead className="w-[100px]" />
+                  <TableHead className="w-[140px]" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -248,20 +278,35 @@ export function OrdersReportPanel({ from, to }: Props) {
                           {paymentSummary(row)}
                         </TableCell>
                         <TableCell onClick={(e) => e.stopPropagation()}>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="h-8 gap-1 text-xs"
-                            onClick={() => {
-                              setInvoiceOrderId(row.id);
-                              setInvoiceLabel(row.invoiceNumber);
-                              setInvoiceOpen(true);
-                            }}
-                          >
-                            <FileText className="size-3.5" />
-                            Invoice
-                          </Button>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-8 gap-1 text-xs"
+                              onClick={() => {
+                                setInvoiceOrderId(row.id);
+                                setInvoiceLabel(row.invoiceNumber);
+                                setInvoiceOpen(true);
+                              }}
+                            >
+                              <FileText className="size-3.5" />
+                              Invoice
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-8 gap-1 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                              onClick={() => {
+                                setDeleteErr(null);
+                                setDeleteTarget(row);
+                              }}
+                            >
+                              <Trash2 className="size-3.5" />
+                              Delete
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                       {open ? (
@@ -318,6 +363,57 @@ export function OrdersReportPanel({ from, to }: Props) {
           }
         }}
       />
+
+      <Dialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleteBusy) {
+            setDeleteTarget(null);
+            setDeleteErr(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete this sale?</DialogTitle>
+            <DialogDescription>
+              {deleteTarget ? (
+                <>
+                  This will void invoice{" "}
+                  <span className="font-mono font-medium text-foreground">
+                    {deleteTarget.invoiceNumber ?? deleteTarget.id}
+                  </span>{" "}
+                  for {fmtInr(deleteTarget.totals.grandTotal)}. Stock will be restored, and this sale
+                  will be removed from revenue, profit, and inventory valuation reports. The invoice
+                  number is kept for audit but will no longer count as an active sale.
+                </>
+              ) : null}
+            </DialogDescription>
+          </DialogHeader>
+          {deleteErr ? <p className="text-sm text-destructive">{deleteErr}</p> : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={deleteBusy}
+              onClick={() => {
+                setDeleteTarget(null);
+                setDeleteErr(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleteBusy}
+              onClick={() => void handleConfirmDelete()}
+            >
+              {deleteBusy ? "Deleting…" : "Delete sale"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -63,3 +63,9 @@ billingRouter.post(
   ...write,
   asyncHandler((req, res) => billingController.createExchange(req, res)),
 );
+
+billingRouter.delete(
+  "/orders/:orderId",
+  ...write,
+  asyncHandler((req, res) => billingController.voidSale(req, res)),
+);

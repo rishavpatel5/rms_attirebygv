@@ -1,3 +1,5 @@
+import { OrderStatus } from "@prisma/client";
+import { AppError } from "../../../middleware/error-handler.js";
 import { serializeOrderForReport } from "../orders-report.serializer.js";
 import type { InvoiceDocument } from "./invoice-document.types.js";
 import { generateInvoicePdfBuffer } from "./invoice-pdf.generator.js";
@@ -5,6 +7,9 @@ import { fetchOrderForInvoice } from "./invoice.repository.js";
 
 export async function getInvoiceDocument(orderId: string): Promise<InvoiceDocument> {
   const row = await fetchOrderForInvoice(orderId);
+  if (row.status === OrderStatus.VOIDED) {
+    throw new AppError(404, "INVOICE_NOT_FOUND", "Invoice not found");
+  }
   return serializeOrderForReport(row);
 }
 

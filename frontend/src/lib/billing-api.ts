@@ -1,4 +1,4 @@
-import { getStoredAccessToken } from "./api-client";
+import { apiDeleteAuthed, getStoredAccessToken } from "./api-client";
 
 function joinUrl(base: string, path: string): string {
   if (!base) return path;
@@ -51,6 +51,11 @@ export async function fetchOrderInvoicePdf(
     throw new Error("Server did not return a PDF");
   }
   return blob;
+}
+
+/** Void a confirmed sale — restores stock and removes it from revenue reports. */
+export async function voidSaleOrder(orderId: string): Promise<void> {
+  await apiDeleteAuthed(`/api/v1/billing/orders/${encodeURIComponent(orderId)}`);
 }
 
 export function triggerPdfDownload(blob: Blob, filename: string): void {

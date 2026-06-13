@@ -111,4 +111,12 @@ export const billingController = {
     });
     res.status(201).json({ data: out });
   },
+
+  async voidSale(req: Request, res: Response): Promise<void> {
+    await billingService.voidSaleOrder({
+      orderId: req.params.orderId!,
+      voidedById: getAuthUserId(req),
+    });
+    res.status(204).send();
+  },
 };

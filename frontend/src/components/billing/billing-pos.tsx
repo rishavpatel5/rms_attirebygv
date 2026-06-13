@@ -1,5 +1,6 @@
 import {
   Keyboard,
+  Loader2,
   MessageCircle,
   Minus,
   Plus,
@@ -104,6 +105,7 @@ export function BillingPos() {
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [saleMessage, setSaleMessage] = useState<string | null>(null);
   const [lastSale, setLastSale] = useState<LastSale | null>(null);
+  const [saleBusy, setSaleBusy] = useState(false);
 
   const searchQuery = useBillingStore((s) => s.searchQuery);
   const setSearchQuery = useBillingStore((s) => s.setSearchQuery);
@@ -260,9 +262,10 @@ export function BillingPos() {
   const grandTotal = quote?.totals.grandTotal ?? "0";
 
   async function completeSale() {
-    if (lines.length === 0 || !quote) return;
+    if (lines.length === 0 || !quote || saleBusy) return;
     setSaleMessage(null);
     setLastSale(null);
+    setSaleBusy(true);
     // Capture customer details before clearCart() resets the POS customer fields.
     const snapshotName = posCustomerName.trim();
     const snapshotPhone = posCustomerPhone.trim();
@@ -308,6 +311,8 @@ export function BillingPos() {
       clearCart();
     } catch (e) {
       setSaleMessage(e instanceof Error ? e.message : "Could not complete sale.");
+    } finally {
+      setSaleBusy(false);
     }
   }
 
@@ -599,10 +604,17 @@ export function BillingPos() {
                 type="button"
                 size="lg"
                 className="w-full rounded-xl text-base font-semibold"
-                disabled={lines.length === 0 || !quote || quoteLoading}
+                disabled={lines.length === 0 || !quote || quoteLoading || saleBusy}
                 onClick={() => void completeSale()}
               >
-                Complete sale
+                {saleBusy ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    Completing sale…
+                  </>
+                ) : (
+                  "Complete sale"
+                )}
               </Button>
               {saleMessage ? (
                 <p className="text-xs text-muted-foreground">{saleMessage}</p>

@@ -221,6 +221,96 @@ async function applySaleReversalForCreditNote(
   }
 }
 
+async function applySaleReversalForVoid(
+  tx: Tx,
+  orderId: string,
+  lines: { variantId: string; quantity: number }[],
+  createdById: string | null,
+): Promise<void> {
+  const sorted = [...lines].sort((a, b) => a.variantId.localeCompare(b.variantId));
+  for (const ln of sorted) {
+    await applyInventoryMovement(tx, {
+      variantId: ln.variantId,
+      quantityDelta: ln.quantity,
+      movementType: "SALE_REVERSAL_IN",
+      referenceKind: InventoryReferenceKind.ORDER,
+      referenceId: orderId,
+      createdById,
+      metadata: { voidedOrderId: orderId },
+    });
+  }
+}
+
+/** Void a confirmed sale: restore stock, exclude from revenue/analytics, keep invoice for audit. */
+export async function voidSaleOrder(input: {
+  orderId: string;
+  voidedById: string | null;
+}): Promise<void> {
+  const { orderId, voidedById } = input;
+
+  await runInTransaction(async (tx) => {
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+      include: { items: true },
+    });
+    if (!order) throw new AppError(404, "ORDER_NOT_FOUND", "Order not found");
+    if (order.documentType !== OrderDocumentType.SALE) {
+      throw new AppError(400, "INVALID_DOCUMENT", "Only sale orders can be voided");
+    }
+    if (order.status !== OrderStatus.CONFIRMED) {
+      throw new AppError(409, "ORDER_NOT_VOIDABLE", "Only confirmed sales can be voided", {
+        status: order.status,
+      });
+    }
+
+    const [creditNoteCount, exchangeCount, salesReturnCount] = await Promise.all([
+      tx.order.count({ where: { originalSaleId: orderId } }),
+      tx.exchange.count({
+        where: {
+          OR: [{ originalOrderId: orderId }, { newOrderId: orderId }],
+          status: { not: ExchangeStatus.CANCELLED },
+        },
+      }),
+      tx.salesReturn.count({
+        where: {
+          orderId,
+          status: { notIn: [SalesReturnStatus.CANCELLED, SalesReturnStatus.REJECTED] },
+        },
+      }),
+    ]);
+
+    if (creditNoteCount > 0) {
+      throw new AppError(
+        409,
+        "ORDER_HAS_CREDIT_NOTES",
+        "Cannot void a sale that has credit notes",
+      );
+    }
+    if (exchangeCount > 0) {
+      throw new AppError(409, "ORDER_HAS_EXCHANGES", "Cannot void a sale linked to an exchange");
+    }
+    if (salesReturnCount > 0) {
+      throw new AppError(409, "ORDER_HAS_RETURNS", "Cannot void a sale that has returns");
+    }
+
+    await applySaleReversalForVoid(
+      tx,
+      orderId,
+      order.items.map((i) => ({ variantId: i.variantId, quantity: i.quantity })),
+      voidedById,
+    );
+
+    await tx.order.update({
+      where: { id: orderId },
+      data: {
+        status: OrderStatus.VOIDED,
+        voidedAt: new Date(),
+        idempotencyKey: null,
+      },
+    });
+  });
+}
+
 export async function checkoutPos(input: {
   body: PosCheckoutBody;
   createdById: string | null;

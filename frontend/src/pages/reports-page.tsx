@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Download, Loader2 } from "lucide-react";
 import {
   Area,
   Bar,
@@ -46,6 +47,7 @@ import {
   type ValuationRow,
   type VelocityRow,
 } from "@/lib/analytics-api";
+import { downloadReportsWorkbook } from "@/lib/reports-export";
 
 const fmtInr = (n: number) =>
   new Intl.NumberFormat("en-IN", {
@@ -83,9 +85,27 @@ export function ReportsPage() {
   const [applied, setApplied] = useState(initial);
   const [granularity, setGranularity] = useState<SalesGranularity>("daily");
   const [tab, setTab] = useState("sales");
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportErr, setExportErr] = useState<string | null>(null);
 
   const applyRange = () => {
     setApplied({ from, to });
+  };
+
+  const handleDownloadAll = async () => {
+    setExportBusy(true);
+    setExportErr(null);
+    try {
+      await downloadReportsWorkbook({
+        from: applied.from,
+        to: applied.to,
+        granularity,
+      });
+    } catch (e: unknown) {
+      setExportErr(e instanceof Error ? e.message : "Export failed");
+    } finally {
+      setExportBusy(false);
+    }
   };
 
   const tokenHint = !getStoredAccessToken();
@@ -113,27 +133,50 @@ export function ReportsPage() {
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Date range (UTC)</CardTitle>
           <CardDescription>
-            Applies to sales, profit, velocity, retention, offers, and the order ledger.
+            Applies to sales, profit, velocity, retention, offers, and the order ledger. Download exports
+            all tabs plus low stock into one Excel file with a sheet per section.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-wrap items-end gap-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="rep-from">From</Label>
-            <Input
-              id="rep-from"
-              type="date"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
-              className="w-[160px]"
-            />
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="rep-from">From</Label>
+              <Input
+                id="rep-from"
+                type="date"
+                value={from}
+                onChange={(e) => setFrom(e.target.value)}
+                className="w-[160px]"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="rep-to">To</Label>
+              <Input id="rep-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} className="w-[160px]" />
+            </div>
+            <Button type="button" onClick={applyRange}>
+              Apply range
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={exportBusy || !!tokenHint}
+              className="gap-2"
+              onClick={() => void handleDownloadAll()}
+            >
+              {exportBusy ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  Preparing download…
+                </>
+              ) : (
+                <>
+                  <Download className="size-4" />
+                  Download all tabs
+                </>
+              )}
+            </Button>
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="rep-to">To</Label>
-            <Input id="rep-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} className="w-[160px]" />
-          </div>
-          <Button type="button" onClick={applyRange}>
-            Apply range
-          </Button>
+          {exportErr ? <p className="text-sm text-destructive">{exportErr}</p> : null}
         </CardContent>
       </Card>
 
