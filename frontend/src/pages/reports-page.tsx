@@ -48,6 +48,7 @@ import {
   type VelocityRow,
 } from "@/lib/analytics-api";
 import { downloadReportsWorkbook } from "@/lib/reports-export";
+import { formatIstDate, formatIstDateTime, IST_TIMEZONE, istYmd, rollingIstDaysRange } from "@/lib/ist-time";
 
 const fmtInr = (n: number) =>
   new Intl.NumberFormat("en-IN", {
@@ -56,26 +57,19 @@ const fmtInr = (n: number) =>
     maximumFractionDigits: 0,
   }).format(n);
 
-function utcYmd(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
-
 function defaultDateRange(): { from: string; to: string } {
-  const to = new Date();
-  const from = new Date(Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate()));
-  from.setUTCDate(from.getUTCDate() - 29);
-  return { from: utcYmd(from), to: utcYmd(to) };
+  return rollingIstDaysRange(30);
 }
 
 function bucketLabel(iso: string, granularity: SalesGranularity): string {
   const d = new Date(iso);
   if (granularity === "monthly") {
-    return d.toLocaleString("en-IN", { month: "short", year: "numeric", timeZone: "UTC" });
+    return d.toLocaleString("en-IN", { month: "short", year: "numeric", timeZone: IST_TIMEZONE });
   }
   if (granularity === "weekly") {
-    return `W ${utcYmd(d)}`;
+    return `W ${istYmd(d)}`;
   }
-  return utcYmd(d);
+  return istYmd(d);
 }
 
 export function ReportsPage() {
@@ -131,7 +125,7 @@ export function ReportsPage() {
 
       <Card className="border-border/60">
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Date range (UTC)</CardTitle>
+          <CardTitle className="text-base">Date range (IST)</CardTitle>
           <CardDescription>
             Applies to sales, profit, velocity, retention, offers, and the order ledger. Download exports
             all tabs plus low stock into one Excel file with a sheet per section.
@@ -489,7 +483,7 @@ function ProfitPanel({ from, to }: { from: string; to: string }) {
               {lines.map((row) => (
                 <TableRow key={row.orderItemId}>
                   <TableCell className="whitespace-nowrap text-xs">
-                    {new Date(row.confirmedAt).toLocaleString("en-IN", { timeZone: "UTC" })}
+                    {formatIstDateTime(row.confirmedAt)}
                   </TableCell>
                   <TableCell className="font-mono text-xs">{row.invoiceNumber ?? "—"}</TableCell>
                   <TableCell className="font-mono text-xs">
@@ -831,7 +825,7 @@ function DeadStockPanel() {
                 <TableCell className="max-w-[200px] truncate">{r.productName}</TableCell>
                 <TableCell className="text-right tabular-nums">{r.quantityOnHand}</TableCell>
                 <TableCell className="text-xs">
-                  {r.lastSaleAt ? new Date(r.lastSaleAt).toLocaleDateString("en-IN", { timeZone: "UTC" }) : "Never"}
+                  {r.lastSaleAt ? formatIstDate(r.lastSaleAt) : "Never"}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">{r.daysSinceSale ?? "—"}</TableCell>
               </TableRow>

@@ -33,6 +33,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { istYmd } from "@/lib/ist-time";
 import {
   apiGetJsonAuthed,
   apiPostJsonAuthed,
@@ -125,6 +126,9 @@ export function BillingPos() {
   const posLinkedCustomerId = useBillingStore((s) => s.posLinkedCustomerId);
   const posCustomerName = useBillingStore((s) => s.posCustomerName);
   const posCustomerPhone = useBillingStore((s) => s.posCustomerPhone);
+  const saleDate = useBillingStore((s) => s.saleDate);
+  const saleDateExplicit = useBillingStore((s) => s.saleDateExplicit);
+  const setSaleDate = useBillingStore((s) => s.setSaleDate);
   const setInvoicePreviewOpen = useUiStore((s) => s.setInvoicePreviewOpen);
 
   useEffect(() => {
@@ -280,6 +284,8 @@ export function BillingPos() {
         posLinkedCustomerId,
         posCustomerName,
         posCustomerPhone,
+        saleDate,
+        saleDateExplicit,
       });
       const { orderId } = await apiPostJsonAuthed<{ orderId: string }>(
         "/api/v1/billing/checkout",
@@ -557,6 +563,25 @@ export function BillingPos() {
                 )}
               </ScrollArea>
               <PosCheckoutCustomerBlock />
+              <Separator />
+              <div className="space-y-1.5">
+                <Label htmlFor="sale-date" className="text-xs text-muted-foreground">
+                  Sale date (IST)
+                </Label>
+                <Input
+                  id="sale-date"
+                  type="date"
+                  value={saleDate}
+                  max={istYmd()}
+                  className="w-full"
+                  onChange={(e) => setSaleDate(e.target.value, true)}
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  {saleDateExplicit
+                    ? "Booked on the selected IST date."
+                    : "Defaults to today in IST if unchanged."}
+                </p>
+              </div>
               <Separator />
               <div className="flex items-center justify-between gap-3">
                 <div className="space-y-0.5">

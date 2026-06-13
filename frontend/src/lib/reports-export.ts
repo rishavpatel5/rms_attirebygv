@@ -18,6 +18,7 @@ import {
   type VelocityRow,
 } from "./analytics-api";
 import { fetchAllPaginated } from "./fetch-paginated";
+import { formatIstDateTime, IST_TIMEZONE, istYmd } from "./ist-time";
 
 export type ReportsExportParams = {
   from: string;
@@ -132,17 +133,12 @@ function lowStockStatus(quantity: number, threshold: number): string {
 function bucketLabel(iso: string, granularity: SalesGranularity): string {
   const d = new Date(iso);
   if (granularity === "monthly") {
-    return d.toLocaleString("en-IN", { month: "short", year: "numeric", timeZone: "UTC" });
+    return d.toLocaleString("en-IN", { month: "short", year: "numeric", timeZone: IST_TIMEZONE });
   }
   if (granularity === "weekly") {
-    return `W ${iso.slice(0, 10)}`;
+    return `W ${istYmd(d)}`;
   }
-  return iso.slice(0, 10);
-}
-
-function formatUtcDateTime(iso: string | null): string {
-  if (!iso) return "";
-  return new Date(iso).toLocaleString("en-IN", { timeZone: "UTC" });
+  return istYmd(d);
 }
 
 function num(s: string): number {
@@ -157,7 +153,7 @@ function buildSalesSheet(
 ): XLSX.WorkSheet {
   const rows: (string | number)[][] = [
     ["Report", "Sales"],
-    ["Date range (UTC)", `${from} to ${to}`],
+    ["Date range (IST)", `${from} to ${to}`],
     ["Granularity", granularity],
     [],
     ["Net sales", sales.totals.netSales],
@@ -189,7 +185,7 @@ function buildProfitSheet(
 ): XLSX.WorkSheet {
   const rows: (string | number | boolean)[][] = [
     ["Report", "Profit"],
-    ["Date range (UTC)", `${from} to ${to}`],
+    ["Date range (IST)", `${from} to ${to}`],
     [],
     ["Revenue", summary.revenue],
     ["COGS", summary.cogs],
@@ -218,7 +214,7 @@ function buildProfitSheet(
   ];
   for (const ln of lines) {
     rows.push([
-      formatUtcDateTime(ln.confirmedAt),
+      formatIstDateTime(ln.confirmedAt),
       ln.invoiceNumber ?? "",
       ln.sku,
       ln.productName,
@@ -261,7 +257,7 @@ function buildInventorySheet(
 function buildFastMovingSheet(from: string, to: string, items: VelocityRow[]): XLSX.WorkSheet {
   const rows: (string | number)[][] = [
     ["Report", "Fast-moving"],
-    ["Date range (UTC)", `${from} to ${to}`],
+    ["Date range (IST)", `${from} to ${to}`],
     [],
     ["SKU", "Product", "Color", "Units sold", "Revenue"],
   ];
@@ -298,7 +294,7 @@ function buildRetentionSheet(
 ): XLSX.WorkSheet {
   return sheetFromRows([
     ["Report", "Retention"],
-    ["Date range (UTC)", `${from} to ${to}`],
+    ["Date range (IST)", `${from} to ${to}`],
     [],
     ["Metric", "Value"],
     ["Customers in period", data.customersInPeriod],
@@ -314,7 +310,7 @@ function buildRetentionSheet(
 function buildOffersSheet(from: string, to: string, items: OfferRow[]): XLSX.WorkSheet {
   const rows: (string | number)[][] = [
     ["Report", "Offers"],
-    ["Date range (UTC)", `${from} to ${to}`],
+    ["Date range (IST)", `${from} to ${to}`],
     [],
     ["Code", "Name", "Orders", "Revenue", "Discount total"],
   ];
@@ -332,7 +328,7 @@ function paymentSummary(row: OrderReportRow): string {
 function buildOrdersSheet(from: string, to: string, orders: OrderReportRow[]): XLSX.WorkSheet {
   const rows: (string | number)[][] = [
     ["Report", "Orders"],
-    ["Date range (UTC)", `${from} to ${to}`],
+    ["Date range (IST)", `${from} to ${to}`],
     ["Status", "CONFIRMED sales only"],
     [],
     [
@@ -356,7 +352,7 @@ function buildOrdersSheet(from: string, to: string, orders: OrderReportRow[]): X
     const t = o.totals;
     rows.push([
       o.invoiceNumber ?? "",
-      formatUtcDateTime(o.confirmedAt ?? o.createdAt),
+      formatIstDateTime(o.confirmedAt ?? o.createdAt),
       o.isWalkIn ? "Walk-in" : (o.customer?.fullName ?? ""),
       o.customer?.phone ?? "",
       o.documentType,

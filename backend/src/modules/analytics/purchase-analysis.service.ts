@@ -43,25 +43,15 @@ const ABOUT_TO_FINISH_DAYS = 7;
 const CRITICAL_DAYS_LEFT = 3;
 const MIN_UNITS_FAST_MOVING = 2;
 
-function utcYmd(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
+import { istYmd, parseIstDayRange } from "../../lib/ist-time.js";
 
 function trendRange(trendDays: number): { from: string; to: string; start: Date; endExclusive: Date } {
-  const to = new Date();
-  const endDay = new Date(
-    Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate()),
-  );
-  const startDay = new Date(endDay);
-  startDay.setUTCDate(startDay.getUTCDate() - (trendDays - 1));
-  const endExclusive = new Date(endDay);
-  endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
-  return {
-    from: utcYmd(startDay),
-    to: utcYmd(endDay),
-    start: startDay,
-    endExclusive,
-  };
+  const to = istYmd();
+  const end = new Date(`${to}T00:00:00+05:30`);
+  const start = new Date(end.getTime() - (trendDays - 1) * 86_400_000);
+  const from = istYmd(start);
+  const { start: rangeStart, endExclusive } = parseIstDayRange(from, to);
+  return { from, to, start: rangeStart, endExclusive };
 }
 
 function fastMovingVariantIds(

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { istYmd } from "@/lib/ist-time";
 
 export type PaymentMethod = "cash" | "card" | "upi";
 
@@ -57,6 +58,10 @@ type BillingState = {
   } | null;
   cartDiscountType: RetailDiscountType | null;
   cartDiscountValue: number | null;
+  /** IST sale date shown in POS; defaults to today. */
+  saleDate: string;
+  /** True when the cashier picked a date other than the live default. */
+  saleDateExplicit: boolean;
   setSearchQuery: (q: string) => void;
   setSelectedProduct: (id: string | null) => void;
   setSelectedVariantIndex: (index: number) => void;
@@ -76,6 +81,7 @@ type BillingState = {
   setLineGiveawayReason: (lineId: string, reason: string) => void;
   setCartDiscount: (type: RetailDiscountType, value: number) => void;
   clearCartDiscount: () => void;
+  setSaleDate: (date: string, explicit?: boolean) => void;
   addOrIncrementLine: (
     line: Omit<
       BillingLine,
@@ -113,6 +119,8 @@ export const useBillingStore = create<BillingState>((set, get) => ({
   selectedVariantIndex: 0,
   ...defaultPosCustomer,
   ...defaultCartDiscount,
+  saleDate: istYmd(),
+  saleDateExplicit: false,
   setSearchQuery: (searchQuery) => set({ searchQuery }),
   setSelectedProduct: (selectedProductId) =>
     set({ selectedProductId, selectedVariantIndex: 0 }),
@@ -201,6 +209,8 @@ export const useBillingStore = create<BillingState>((set, get) => ({
   setCartDiscount: (cartDiscountType, cartDiscountValue) =>
     set({ cartDiscountType, cartDiscountValue }),
   clearCartDiscount: () => set({ ...defaultCartDiscount }),
+  setSaleDate: (date, explicit = true) =>
+    set({ saleDate: date, saleDateExplicit: explicit }),
   addOrIncrementLine: (payload) => {
     const { lines } = get();
     const isGiveaway = payload.isGiveaway ?? false;
@@ -264,6 +274,8 @@ export const useBillingStore = create<BillingState>((set, get) => ({
       searchQuery: "",
       selectedProductId: null,
       selectedVariantIndex: 0,
+      saleDate: istYmd(),
+      saleDateExplicit: false,
       ...defaultPosCustomer,
       ...defaultCartDiscount,
     }),
@@ -317,9 +329,14 @@ export function buildPosCheckoutPayload(
     posLinkedCustomerId: string | null;
     posCustomerName: string;
     posCustomerPhone: string;
+    saleDateExplicit: boolean;
+    saleDate: string;
   },
 ) {
   const checkout = buildPosQuotePayload(input) as Record<string, unknown>;
+  if (input.saleDateExplicit) {
+    checkout.saleDate = input.saleDate;
+  }
   checkout.payments = [
     {
       method:

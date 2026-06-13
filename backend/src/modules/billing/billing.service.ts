@@ -35,7 +35,9 @@ import type {
 import { mapPayments } from "./billing.validators.js";
 import { buildPosPricingQuote } from "./billing.pricing.js";
 import { resolveCustomerForPosCheckout } from "../customers/customer-checkout-resolution.js";
-import { parseUtcDayRange } from "../analytics/analytics.range.js";
+import { parseIstDayRange } from "../analytics/analytics.range.js";
+import { istYmd, istYear, resolveSaleConfirmedAt } from "../../lib/ist-time.js";
+import { assertValidIstSaleDate } from "../analytics/analytics.range.js";
 import { serializeOrderForReport } from "./orders-report.serializer.js";
 import type { OrdersReportQuery } from "../analytics/analytics.validators.js";
 import { ORDER_INVOICE_INCLUDE } from "./invoice/invoice.repository.js";
@@ -98,14 +100,14 @@ function assertPaymentTotalsCreditNote(
   }
 }
 
-async function allocateInvoiceNumber(tx: Tx): Promise<string> {
+async function allocateInvoiceNumber(tx: Tx, refDate: Date = new Date()): Promise<string> {
   try {
     const updated = await tx.invoiceSequence.update({
       where: { id: "singleton" },
       data: { nextSeq: { increment: 1 } },
       select: { nextSeq: true },
     });
-    const y = new Date().getUTCFullYear();
+    const y = istYear(refDate);
     return `INV-${y}-${String(updated.nextSeq).padStart(7, "0")}`;
   } catch (e: unknown) {
     const code =
@@ -121,11 +123,21 @@ async function allocateInvoiceNumber(tx: Tx): Promise<string> {
         data: { nextSeq: { increment: 1 } },
         select: { nextSeq: true },
       });
-      const y = new Date().getUTCFullYear();
+      const y = istYear(refDate);
       return `INV-${y}-${String(updated.nextSeq).padStart(7, "0")}`;
     }
     throw e;
   }
+}
+
+function resolveCheckoutConfirmedAt(saleDate?: string | null): Date {
+  if (saleDate) {
+    assertValidIstSaleDate(saleDate);
+    if (saleDate > istYmd()) {
+      throw new AppError(400, "FUTURE_SALE_DATE", "Sale date cannot be in the future (IST)");
+    }
+  }
+  return resolveSaleConfirmedAt(saleDate);
 }
 
 export function quotePosCheckout(body: PosQuoteBody) {
@@ -342,7 +354,9 @@ export async function checkoutPos(input: {
       customerSnapshot: body.customerSnapshot ?? null,
     });
 
-    const invoiceNumber = await allocateInvoiceNumber(tx);
+    const confirmedAt = resolveCheckoutConfirmedAt(body.saleDate);
+
+    const invoiceNumber = await allocateInvoiceNumber(tx, confirmedAt);
     const order = await tx.order.create({
       data: {
         documentType: OrderDocumentType.SALE,
@@ -357,7 +371,7 @@ export async function checkoutPos(input: {
         notes: body.notes ?? null,
         idempotencyKey: body.idempotencyKey ?? null,
         createdById,
-        confirmedAt: new Date(),
+        confirmedAt,
         offerId: body.offerId ?? null,
         items: {
           create: await mapPricingLinesToOrderItems(tx, pricing.lines),
@@ -562,7 +576,7 @@ export async function listOrders(query: Record<string, unknown>) {
 
 /** Full order ledger for reports: lines, discounts, GST, payments. */
 export async function listOrdersReport(input: OrdersReportQuery) {
-  const { start, endExclusive } = parseUtcDayRange(input.from, input.to);
+  const { start, endExclusive } = parseIstDayRange(input.from, input.to);
   const { page, limit, skip } = parsePagination({
     page: input.page,
     limit: input.limit,

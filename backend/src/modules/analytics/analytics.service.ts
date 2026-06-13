@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../lib/prisma.js";
 import { buildMeta, parsePagination } from "../../lib/pagination.js";
-import { parseUtcDayRange } from "./analytics.range.js";
+import { parseIstDayRange } from "./analytics.range.js";
 import type {
   DateRangeQuery,
   DeadStockQuery,
@@ -42,7 +42,7 @@ function categoryClause(categoryId?: string | null): Prisma.Sql {
 }
 
 export async function getSalesBuckets(input: SalesSeriesQuery) {
-  const { start, endExclusive } = parseUtcDayRange(input.from, input.to);
+  const { start, endExclusive } = parseIstDayRange(input.from, input.to);
   const unit = truncUnit(input.granularity);
 
   const rows = await prisma.$queryRaw<
@@ -55,7 +55,7 @@ export async function getSalesBuckets(input: SalesSeriesQuery) {
     }[]
   >(Prisma.sql`
     SELECT
-      date_trunc(${unit}, o.confirmed_at AT TIME ZONE 'UTC') AS period_start,
+      date_trunc(${unit}, o.confirmed_at AT TIME ZONE 'Asia/Kolkata') AS period_start,
       COALESCE(SUM(CASE
         WHEN o.document_type = 'SALE'::"OrderDocumentType"
          AND o.status = 'CONFIRMED'::"OrderStatus"
@@ -111,7 +111,7 @@ export async function getSalesBuckets(input: SalesSeriesQuery) {
 }
 
 export async function getProfitSummary(input: DateRangeQuery) {
-  const { start, endExclusive } = parseUtcDayRange(input.from, input.to);
+  const { start, endExclusive } = parseIstDayRange(input.from, input.to);
 
   const [row] = await prisma.$queryRaw<
     {
@@ -196,7 +196,7 @@ export async function getProfitSummary(input: DateRangeQuery) {
 }
 
 export async function getProfitLines(input: ProfitLinesQuery) {
-  const { start, endExclusive } = parseUtcDayRange(input.from, input.to);
+  const { start, endExclusive } = parseIstDayRange(input.from, input.to);
   const { page, limit, skip } = parsePagination({
     page: input.page,
     limit: input.limit,
@@ -432,7 +432,7 @@ export async function getInventoryValuation(input: InventoryValuationQuery) {
 }
 
 export async function getFastMovingProducts(input: FastMovingQuery) {
-  const { start, endExclusive } = parseUtcDayRange(input.from, input.to);
+  const { start, endExclusive } = parseIstDayRange(input.from, input.to);
   const take = input.limit;
 
   const rows = await prisma.$queryRaw<
@@ -528,7 +528,7 @@ export async function getDeadStock(input: DeadStockQuery) {
       ls.last_sale AS last_sale_at,
       CASE
         WHEN ls.last_sale IS NULL THEN NULL
-        ELSE EXTRACT(DAY FROM (NOW() AT TIME ZONE 'UTC' - ls.last_sale AT TIME ZONE 'UTC'))::text
+        ELSE EXTRACT(DAY FROM (NOW() AT TIME ZONE 'Asia/Kolkata' - ls.last_sale AT TIME ZONE 'Asia/Kolkata'))::text
       END AS days_since_sale
     FROM inventory_balances ib
     INNER JOIN product_variants pv ON pv.id = ib.variant_id
@@ -565,7 +565,7 @@ export async function getDeadStock(input: DeadStockQuery) {
 }
 
 export async function getCustomerRetention(input: DateRangeQuery) {
-  const { start, endExclusive } = parseUtcDayRange(input.from, input.to);
+  const { start, endExclusive } = parseIstDayRange(input.from, input.to);
 
   const [row] = await prisma.$queryRaw<
     {
@@ -650,7 +650,7 @@ export async function getCustomerRetention(input: DateRangeQuery) {
 }
 
 export async function getOfferPerformance(input: OfferPerformanceQuery) {
-  const { start, endExclusive } = parseUtcDayRange(input.from, input.to);
+  const { start, endExclusive } = parseIstDayRange(input.from, input.to);
   const { page, limit, skip } = parsePagination({
     page: input.page,
     limit: input.limit,

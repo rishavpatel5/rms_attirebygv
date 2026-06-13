@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/table";
 import { OrderInvoiceSheet } from "@/components/customers/order-invoice-sheet";
 import { voidSaleOrder } from "@/lib/billing-api";
+import { formatIstDateTime } from "@/lib/ist-time";
 import { cn } from "@/lib/utils";
 import {
   fetchOrdersReport,
@@ -43,12 +44,7 @@ const fmtInr = (n: number | string) => {
 const num = (s: string) => Number(s) || 0;
 
 function formatDate(iso: string | null): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString("en-IN", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  });
+  return formatIstDateTime(iso);
 }
 
 function paymentSummary(row: OrderReportRow): string {
@@ -135,7 +131,7 @@ export function OrdersReportPanel({ from, to }: Props) {
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Order ledger</CardTitle>
           <CardDescription>
-            Every booked sale in the selected UTC date range — line-level discounts, GST split, payments,
+            Every booked sale in the selected IST date range — line-level discounts, GST split, payments,
             and customer. Delete mistaken entries to restore stock and sync revenue.
           </CardDescription>
         </CardHeader>

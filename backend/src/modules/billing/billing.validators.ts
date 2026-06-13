@@ -73,6 +73,11 @@ const posCheckoutCoreSchema = z.object({
   currency: z.string().min(1).max(8).default("INR"),
   notes: z.string().max(2000).nullable().optional(),
   idempotencyKey: z.string().min(8).max(128).nullable().optional(),
+  /** IST calendar day (YYYY-MM-DD). Omit to use today in IST at checkout. */
+  saleDate: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  ),
   offerId: z.string().cuid().nullable().optional(),
   /** Cart-level % or flat discount (distributed across lines for GST). */
   cartDiscount: cartDiscountSchema,
