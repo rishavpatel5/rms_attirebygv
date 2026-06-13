@@ -251,3 +251,48 @@ export async function deleteVariant(id: string): Promise<void> {
     await tx.productVariant.delete({ where: { id } });
   });
 }
+
+const skuLookupInclude = {
+  product: {
+    select: {
+      id: true,
+      name: true,
+      kind: true,
+      brand: true,
+      category: { select: { name: true } },
+    },
+  },
+  color: { select: { name: true } },
+  size: { select: { label: true } },
+  inventory: { select: { quantity: true } },
+} as const;
+
+/** Check whether a SKU exists in the master catalog (exact + close partial matches). */
+export async function lookupVariantsBySku(query: Record<string, unknown>) {
+  const sku = typeof query.sku === "string" ? query.sku.trim() : "";
+  if (!sku || sku.length < 2) {
+    throw new AppError(400, "SKU_REQUIRED", "Enter a SKU to look up (at least 2 characters)");
+  }
+
+  const exactMatch = await prisma.productVariant.findFirst({
+    where: { sku: { equals: sku, mode: "insensitive" } },
+    include: skuLookupInclude,
+  });
+
+  const partialMatches =
+    exactMatch === null
+      ? await prisma.productVariant.findMany({
+          where: { sku: { contains: sku, mode: "insensitive" } },
+          take: 8,
+          orderBy: { sku: "asc" },
+          include: skuLookupInclude,
+        })
+      : [];
+
+  return {
+    query: sku,
+    exists: exactMatch !== null,
+    exactMatch,
+    partialMatches,
+  };
+}

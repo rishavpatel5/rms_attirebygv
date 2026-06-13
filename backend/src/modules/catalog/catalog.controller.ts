@@ -102,6 +102,11 @@ export const catalogController = {
     res.status(204).send();
   },
 
+  async lookupVariantBySku(req: Request, res: Response): Promise<void> {
+    const out = await variantService.lookupVariantsBySku(getQueryRecord(req));
+    res.json({ data: out });
+  },
+
   async listColors(req: Request, res: Response): Promise<void> {
     const out = await productService.listColors(getQueryRecord(req));
     res.json({ data: out.items, meta: out.meta });

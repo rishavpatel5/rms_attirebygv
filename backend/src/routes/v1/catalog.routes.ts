@@ -77,6 +77,11 @@ catalogRouter.post(
 );
 
 catalogRouter.get(
+  "/variants/lookup",
+  ...read,
+  asyncHandler((req, res) => catalogController.lookupVariantBySku(req, res)),
+);
+catalogRouter.get(
   "/variants/:variantId",
   ...read,
   asyncHandler((req, res) => catalogController.getVariant(req, res)),

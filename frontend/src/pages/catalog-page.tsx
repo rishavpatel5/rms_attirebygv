@@ -2,6 +2,7 @@ import { ChevronLeft, ChevronRight, Loader2, PackagePlus, Palette, Plus, Rows3, 
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ColorLabel } from "@/components/catalog/color-dot";
+import { SkuLookupCard } from "@/components/catalog/sku-lookup-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -511,6 +512,8 @@ export function CatalogPage() {
       </div>
 
       {err ? <p className="text-sm text-destructive">{err}</p> : null}
+
+      <SkuLookupCard />
 
       {view === "browse" ? (
         <div className="space-y-4">
