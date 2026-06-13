@@ -13,6 +13,7 @@ const titles: Record<string, string> = {
   "/dashboard/inventory": "Stocks",
   "/dashboard/customers": "Customers",
   "/dashboard/suppliers": "Suppliers",
+  "/dashboard/purchase-analysis": "Purchase Analysis",
   "/dashboard/reports": "Reports & Analytics",
   "/dashboard/offers": "Offers & Marketing",
   "/dashboard/settings": "Settings",
@@ -28,6 +29,7 @@ function titleFromPath(pathname: string) {
   if (/^\/dashboard\/customers\/[^/]+$/.test(pathname)) return "Customer profile";
   if (pathname.startsWith("/dashboard/customers")) return "Customers";
   if (pathname.startsWith("/dashboard/suppliers")) return "Suppliers";
+  if (pathname.startsWith("/dashboard/purchase-analysis")) return "Purchase Analysis";
   if (pathname.startsWith("/dashboard/reports")) return "Reports & Analytics";
   if (pathname.startsWith("/dashboard/offers")) return "Offers & Marketing";
   if (pathname.startsWith("/dashboard/settings")) return "Settings";

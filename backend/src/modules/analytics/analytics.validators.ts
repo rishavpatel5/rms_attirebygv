@@ -60,6 +60,16 @@ export type OfferPerformanceQuery = z.infer<typeof offerPerformanceQuerySchema>;
 const orderStatusSchema = z.enum(["DRAFT", "CONFIRMED", "VOIDED"]);
 const orderDocumentTypeSchema = z.enum(["SALE", "CREDIT_NOTE"]);
 
+export const purchaseAnalysisQuerySchema = z.object({
+  trendDays: z.coerce
+    .number()
+    .int()
+    .refine((v) => [7, 14, 30].includes(v), "trendDays must be 7, 14, or 30")
+    .default(30),
+  coverDays: z.coerce.number().int().min(7).max(60).default(14),
+});
+export type PurchaseAnalysisQuery = z.infer<typeof purchaseAnalysisQuerySchema>;
+
 export const ordersReportQuerySchema = dateRangeQuerySchema.merge(paginationQuerySchema).extend({
   status: z.preprocess(
     (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),

@@ -11,9 +11,11 @@ import {
   offerPerformanceQuerySchema,
   ordersReportQuerySchema,
   profitLinesQuerySchema,
+  purchaseAnalysisQuerySchema,
   salesSeriesQuerySchema,
 } from "./analytics.validators.js";
 import * as billingService from "../billing/billing.service.js";
+import * as purchaseAnalysisService from "./purchase-analysis.service.js";
 
 function parseQuery<S extends z.ZodTypeAny>(schema: S, req: Request): z.infer<S> {
   const parsed = schema.safeParse(getQueryRecord(req));
@@ -76,5 +78,11 @@ export const analyticsController = {
     const q = parseQuery(ordersReportQuerySchema, req);
     const out = await billingService.listOrdersReport(q);
     res.json({ data: out.items, meta: out.meta });
+  },
+
+  async purchaseAnalysis(req: Request, res: Response): Promise<void> {
+    const q = parseQuery(purchaseAnalysisQuerySchema, req);
+    const data = await purchaseAnalysisService.getPurchaseAnalysis(q);
+    res.json({ data });
   },
 };

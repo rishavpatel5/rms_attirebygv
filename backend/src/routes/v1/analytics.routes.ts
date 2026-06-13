@@ -62,3 +62,9 @@ analyticsRouter.get(
   ...read,
   asyncHandler((req, res) => analyticsController.ordersReport(req, res)),
 );
+
+analyticsRouter.get(
+  "/purchase-analysis",
+  ...read,
+  asyncHandler((req, res) => analyticsController.purchaseAnalysis(req, res)),
+);

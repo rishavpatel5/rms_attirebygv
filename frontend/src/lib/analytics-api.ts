@@ -359,3 +359,63 @@ export async function fetchOrdersReport(args: {
   );
   return { items: data, meta: meta ?? { page: 1, limit: 25, total: 0, totalPages: 0 } };
 }
+
+export type PurchaseAnalysisStatus =
+  | "OUT_OF_STOCK"
+  | "CRITICAL"
+  | "ABOUT_TO_FINISH"
+  | "FAST_MOVING_LOW"
+  | "LOW_STOCK";
+
+export type PurchaseAnalysisRow = {
+  variantId: string;
+  sku: string;
+  productName: string;
+  productKind: string;
+  colorName: string | null;
+  sizeLabel: string | null;
+  variantLabel: string;
+  currentStock: number;
+  threshold: number;
+  unitsSold: number;
+  avgDailySales: number;
+  daysOfStockLeft: number | null;
+  isFastMoving: boolean;
+  status: PurchaseAnalysisStatus;
+  priority: number;
+  suggestedReorderQty: number;
+  analysisNote: string;
+};
+
+export type PurchaseAnalysisSummary = {
+  outOfStock: number;
+  critical: number;
+  aboutToFinish: number;
+  fastMovingLow: number;
+  lowStock: number;
+  totalSkus: number;
+  totalSuggestedUnits: number;
+};
+
+export type PurchaseAnalysisResponse = {
+  trendDays: number;
+  coverDays: number;
+  trendFrom: string;
+  trendTo: string;
+  summary: PurchaseAnalysisSummary;
+  items: PurchaseAnalysisRow[];
+};
+
+export type TrendDaysOption = 7 | 14 | 30;
+
+export function fetchPurchaseAnalysis(args: {
+  trendDays?: TrendDaysOption;
+  coverDays?: number;
+}): Promise<PurchaseAnalysisResponse> {
+  return apiGetJsonAuthed<PurchaseAnalysisResponse>(
+    `/api/v1/analytics/purchase-analysis${qs({
+      trendDays: args.trendDays ?? 30,
+      coverDays: args.coverDays ?? 14,
+    })}`,
+  );
+}
