@@ -196,7 +196,8 @@ export function BulkImportPage() {
       const formData = new FormData();
       formData.append("file", file);
 
-      const res = await fetch("/api/v1/bulk-import/scan", {
+      const base = import.meta.env.VITE_API_URL ?? "";
+      const res = await fetch(`${base}/api/v1/bulk-import/scan`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token ?? ""}` },
         body: formData,
