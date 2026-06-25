@@ -133,12 +133,6 @@ const fmtDate = (iso: string) =>
     minute: "2-digit",
   });
 
-const ACTION_LABELS: Record<ScanRowResult["action"], string> = {
-  receive_only: "Receive stock",
-  create_variant: "New variant",
-  create_product_and_variant: "New product + variant",
-};
-
 // ── Main component ───────────────────────────────────────────────────────────
 
 export function BulkImportPage() {
@@ -283,6 +277,36 @@ export function BulkImportPage() {
     setFilterTab("all");
     if (inputRef.current) inputRef.current.value = "";
   };
+
+  // Flip every row of a product between "add variant to matched product" and
+  // "create a brand-new product". Used when the fuzzy matcher picks the wrong
+  // existing product (e.g. "Acid Wash Baggy Pants" → "Acid Wash Boxy Tank").
+  const overrideToNewProduct = useCallback((productName: string, makeNew: boolean) => {
+    setScanResult((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        rows: prev.rows.map((r) => {
+          if (r.raw.product_name !== productName || !r.productMatch) return r;
+          return makeNew
+            ? { ...r, action: "create_product_and_variant", productId: undefined }
+            : { ...r, action: "create_variant", productId: r.productMatch.id };
+        }),
+      };
+    });
+  }, []);
+
+  // How many rows share each product name that had a fuzzy match (for the
+  // "Create as new product (N rows)" button label).
+  const matchedSiblings = useMemo(() => {
+    const m = new Map<string, number>();
+    if (scanResult) {
+      for (const r of scanResult.rows) {
+        if (r.productMatch) m.set(r.raw.product_name, (m.get(r.raw.product_name) ?? 0) + 1);
+      }
+    }
+    return m;
+  }, [scanResult]);
 
   // ── Rollback handlers ─────────────────────────────────────────────────────
 
@@ -553,7 +577,11 @@ export function BulkImportPage() {
                           </td>
                           <td className="px-3 py-2.5 text-right tabular-nums">{fmtINR(row.raw.list_price)}</td>
                           <td className="px-3 py-2.5">
-                            <RowStatus row={row} />
+                            <RowStatus
+                              row={row}
+                              onOverride={overrideToNewProduct}
+                              siblingCount={matchedSiblings.get(row.raw.product_name) ?? 1}
+                            />
                           </td>
                         </tr>
                       ))}
@@ -859,7 +887,15 @@ function StatCard({ label, value }: { label: string; value: number | string }) {
   );
 }
 
-function RowStatus({ row }: { row: ScanRowResult }) {
+function RowStatus({
+  row,
+  onOverride,
+  siblingCount,
+}: {
+  row: ScanRowResult;
+  onOverride: (productName: string, makeNew: boolean) => void;
+  siblingCount: number;
+}) {
   if (row.status === "red") {
     return (
       <div className="flex items-start gap-1.5">
@@ -874,12 +910,66 @@ function RowStatus({ row }: { row: ScanRowResult }) {
   }
 
   if (row.status === "amber") {
+    // Backend bundles the product-match line into `warnings`; we render that
+    // decision interactively below, so strip those two phrasings out here and
+    // keep only the color/size/category auto-create notes.
+    const otherWarnings = row.warnings.filter(
+      (w) => !w.includes("will be added to") && !w.includes("will be created"),
+    );
+    const match = row.productMatch;
+    const isOverridden = !!match && row.action === "create_product_and_variant";
+    const sim = match ? Math.round(match.similarity * 100) : 0;
+    const borderline = !!match && match.similarity < 0.95;
+
     return (
       <div className="flex items-start gap-1.5">
         <AlertCircle className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
-        <div>
-          <p className="text-xs font-medium text-amber-800">{ACTION_LABELS[row.action]}</p>
-          {row.warnings.map((w, i) => (
+        <div className="space-y-1">
+          {match ? (
+            isOverridden ? (
+              <div>
+                <p className="text-xs font-medium text-emerald-700">
+                  Will create NEW product “{row.raw.product_name}”
+                </p>
+                <button
+                  type="button"
+                  onClick={() => onOverride(row.raw.product_name, false)}
+                  className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                >
+                  Undo — add to “{match.name}” instead
+                </button>
+              </div>
+            ) : (
+              <div>
+                <p
+                  className={cn(
+                    "text-xs font-medium",
+                    borderline ? "text-red-700" : "text-amber-800",
+                  )}
+                >
+                  {borderline && "⚠ "}New variant → “{match.name}” ({sim}% match)
+                </p>
+                {borderline && (
+                  <p className="text-[11px] text-red-600">
+                    Similar name, possibly a different product — verify.
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => onOverride(row.raw.product_name, true)}
+                  className="text-xs font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+                >
+                  Not a match? Create as new product
+                  {siblingCount > 1 ? ` (${siblingCount} rows)` : ""}
+                </button>
+              </div>
+            )
+          ) : (
+            <p className="text-xs font-medium text-amber-800">
+              New product “{row.raw.product_name}” will be created
+            </p>
+          )}
+          {otherWarnings.map((w, i) => (
             <p key={i} className="text-xs text-amber-700">{w}</p>
           ))}
         </div>
