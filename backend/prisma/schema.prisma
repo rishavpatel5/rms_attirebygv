@@ -37,6 +37,8 @@ model User {
   purchaseOrdersCreated  PurchaseOrder[] @relation("PurchaseOrderCreatedBy")
   stockAdjustmentsCreated StockAdjustment[] @relation("StockAdjustmentCreatedBy")
   notifications          Notification[]
+  bulkImportBatchesCreated    BulkImportBatch[] @relation("BulkImportBatchCreatedBy")
+  bulkImportBatchesRolledBack BulkImportBatch[] @relation("BulkImportBatchRolledBackBy")
 
   @@map("users")
 }
@@ -348,9 +350,12 @@ model PurchaseOrder {
   createdAt    DateTime              @default(now()) @map("created_at")
   updatedAt    DateTime              @updatedAt @map("updated_at")
 
-  supplier  Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
-  createdBy User?    @relation("PurchaseOrderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  items     PurchaseOrderItem[]
+  bulkImportBatchId String?          @map("bulk_import_batch_id")
+
+  supplier        Supplier         @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  createdBy       User?            @relation("PurchaseOrderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  bulkImportBatch BulkImportBatch? @relation(fields: [bulkImportBatchId], references: [id], onDelete: SetNull)
+  items           PurchaseOrderItem[]
 
   @@index([supplierId, status])
   @@index([createdAt(sort: Desc)])
@@ -734,6 +739,33 @@ model WhatsAppLog {
   @@index([status, createdAt(sort: Desc)])
   @@index([providerMessageId])
   @@map("whatsapp_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Bulk import
+// ---------------------------------------------------------------------------
+
+enum BulkImportBatchStatus {
+  COMPLETED
+  ROLLED_BACK
+}
+
+model BulkImportBatch {
+  id             String                @id @default(cuid())
+  status         BulkImportBatchStatus @default(COMPLETED)
+  rowsImported   Int                   @map("rows_imported")
+  createdById    String?               @map("created_by_id")
+  rolledBackAt   DateTime?             @map("rolled_back_at")
+  rolledBackById String?               @map("rolled_back_by_id")
+  createdAt      DateTime              @default(now()) @map("created_at")
+  updatedAt      DateTime              @updatedAt @map("updated_at")
+
+  createdBy      User?           @relation("BulkImportBatchCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  rolledBackBy   User?           @relation("BulkImportBatchRolledBackBy", fields: [rolledBackById], references: [id], onDelete: SetNull)
+  purchaseOrders PurchaseOrder[]
+
+  @@index([createdAt(sort: Desc)])
+  @@map("bulk_import_batches")
 }
 
 // ---------------------------------------------------------------------------

@@ -13,6 +13,7 @@ import {
   Receipt,
   Settings,
   ShoppingCart,
+  Sheet,
   Truck,
   Users,
 } from "lucide-react";
@@ -105,6 +106,7 @@ const MANAGE: NavItem[] = [
   { to: "/dashboard/reports", label: "Reports", icon: BarChart2, step: 5 },
   { to: "/dashboard/offers", label: "Offers", icon: Gift },
   { to: "/dashboard/expenses", label: "Expenses", icon: Receipt },
+  { to: "/dashboard/bulk-import", label: "Bulk Import", icon: Sheet },
 ];
 
 export function AppSidebar({ className }: { className?: string }) {

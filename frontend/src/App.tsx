@@ -1,5 +1,6 @@
 import { createBrowserRouter, Navigate, RouterProvider } from "react-router-dom";
 import { Toaster } from "sonner";
+import { BulkImportPage } from "@/pages/bulk-import-page";
 import { ExpensesPage } from "@/pages/expenses-page";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
 import { BillingPage } from "@/pages/billing-page";
@@ -35,6 +36,7 @@ const router = createBrowserRouter([
       { path: "dashboard/purchase-analysis", element: <PurchaseAnalysisPage /> },
       { path: "dashboard/reports", element: <ReportsPage /> },
       { path: "dashboard/offers", element: <OffersPage /> },
+      { path: "dashboard/bulk-import", element: <BulkImportPage /> },
       { path: "dashboard/expenses", element: <ExpensesPage /> },
       { path: "dashboard/settings", element: <SettingsPage /> },
       { path: "billing", element: <BillingPage /> },
