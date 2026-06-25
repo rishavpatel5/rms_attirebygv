@@ -1,11 +1,18 @@
-import { ChevronLeft, ChevronRight, Loader2, PackagePlus, Palette, Plus, Rows3, Ruler, Tag } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { ChevronLeft, ChevronRight, Loader2, PackagePlus, Palette, Pencil, Plus, Rows3, Ruler, Tag, Trash2, X } from "lucide-react";
+import { toast } from "sonner";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ColorLabel } from "@/components/catalog/color-dot";
 import { SkuLookupCard } from "@/components/catalog/sku-lookup-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -18,6 +25,7 @@ import {
 } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
 import {
+  apiDeleteAuthed,
   apiGetJsonAuthed,
   apiGetJsonAuthedWithMeta,
   apiPatchJsonAuthed,
@@ -76,9 +84,257 @@ const BLUEPRINT_STEPS = [
 const selectControl =
   "flex h-11 w-full cursor-pointer rounded-xl border-2 border-border/60 bg-muted/15 px-3.5 text-sm font-medium shadow-sm transition-colors hover:border-border/90 hover:bg-muted/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2";
 
-function CatalogProductCard({ p }: { p: CatalogProductRow }) {
+type SkuVariant = {
+  id: string;
+  sku: string;
+  color: { name: string } | null;
+  size: { label: string } | null;
+};
+
+function ProductSkuDialog({
+  product,
+  open,
+  onClose,
+  onProductDeleted,
+}: {
+  product: CatalogProductRow | null;
+  open: boolean;
+  onClose: () => void;
+  onProductDeleted: (id: string) => void;
+}) {
+  const [variants, setVariants] = useState<SkuVariant[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editSku, setEditSku] = useState("");
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const editInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!open || !product) {
+      setVariants([]);
+      setEditingId(null);
+      setConfirmDeleteId(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      setLoading(true);
+      try {
+        const { data } = await apiGetJsonAuthedWithMeta<SkuVariant[]>(
+          `/api/v1/catalog/products/${product.id}/variants?limit=200`,
+        );
+        if (!cancelled) setVariants(data);
+      } catch (e) {
+        if (!cancelled) toast.error(e instanceof Error ? e.message : "Failed to load variants");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, product]);
+
+  useEffect(() => {
+    if (editingId) editInputRef.current?.focus();
+  }, [editingId]);
+
+  function startEdit(v: SkuVariant) {
+    setEditingId(v.id);
+    setEditSku(v.sku);
+    setConfirmDeleteId(null);
+  }
+
+  async function saveEdit(variantId: string) {
+    const trimmed = editSku.trim();
+    if (!trimmed) return;
+    setSavingId(variantId);
+    try {
+      await apiPatchJsonAuthed(`/api/v1/catalog/variants/${variantId}`, { sku: trimmed });
+      setVariants((prev) => prev.map((v) => (v.id === variantId ? { ...v, sku: trimmed } : v)));
+      setEditingId(null);
+      toast.success("SKU updated");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to update SKU");
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  async function handleDeleteVariant(variantId: string) {
+    setDeletingId(variantId);
+    try {
+      await apiDeleteAuthed(`/api/v1/catalog/variants/${variantId}`);
+      const remaining = variants.filter((v) => v.id !== variantId);
+      setVariants(remaining);
+      setConfirmDeleteId(null);
+      toast.success("SKU deleted");
+      if (remaining.length === 0 && product) {
+        try {
+          await apiDeleteAuthed(`/api/v1/catalog/products/${product.id}`);
+        } catch {
+          // product may be soft-deleted if it has order history — either way remove from list
+        }
+        onProductDeleted(product.id);
+        onClose();
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to delete variant");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  function variantLabel(v: SkuVariant) {
+    const parts = [v.color?.name, v.size?.label].filter(Boolean);
+    return parts.length > 0 ? parts.join(" · ") : "Default";
+  }
+
   return (
-    <Card className="border-border/60 shadow-sm">
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="leading-snug">{product?.name ?? ""}</DialogTitle>
+        </DialogHeader>
+
+        {loading ? (
+          <div className="flex items-center gap-2 py-8 text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+            Loading SKUs…
+          </div>
+        ) : variants.length === 0 && !loading ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">No variants on this product.</p>
+        ) : (
+          <ul className="divide-y divide-border/60 overflow-hidden rounded-xl border border-border/60">
+            {variants.map((v) => {
+              const isEditing = editingId === v.id;
+              const isDeleting = deletingId === v.id;
+              const isSaving = savingId === v.id;
+              const confirmingDelete = confirmDeleteId === v.id;
+
+              return (
+                <li key={v.id} className="flex flex-col gap-2 bg-background px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <ColorLabel colorName={v.color?.name}>
+                        <span className="text-sm font-medium">{variantLabel(v)}</span>
+                      </ColorLabel>
+                    </div>
+                    {!isEditing && !confirmingDelete ? (
+                      <div className="flex shrink-0 gap-1">
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          className="size-8 text-muted-foreground hover:text-foreground"
+                          onClick={() => startEdit(v)}
+                        >
+                          <Pencil className="size-3.5" />
+                        </Button>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          className="size-8 text-muted-foreground hover:text-destructive"
+                          onClick={() => {
+                            setConfirmDeleteId(v.id);
+                            setEditingId(null);
+                          }}
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {isEditing ? (
+                    <div className="flex items-center gap-2">
+                      <Input
+                        ref={editInputRef}
+                        className="h-8 font-mono text-xs"
+                        value={editSku}
+                        onChange={(e) => setEditSku(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") void saveEdit(v.id);
+                          if (e.key === "Escape") setEditingId(null);
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-8 shrink-0 rounded-lg"
+                        disabled={isSaving || !editSku.trim()}
+                        onClick={() => void saveEdit(v.id)}
+                      >
+                        {isSaving ? <Loader2 className="size-3.5 animate-spin" /> : "Save"}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="size-8 shrink-0"
+                        onClick={() => setEditingId(null)}
+                      >
+                        <X className="size-3.5" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <p className="font-mono text-xs text-muted-foreground">{v.sku}</p>
+                  )}
+
+                  {confirmingDelete ? (
+                    <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">
+                      <span className="flex-1 text-destructive">Delete this SKU?</span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="destructive"
+                        className="h-7 rounded-md"
+                        disabled={isDeleting}
+                        onClick={() => void handleDeleteVariant(v.id)}
+                      >
+                        {isDeleting ? <Loader2 className="size-3 animate-spin" /> : "Delete"}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 rounded-md"
+                        onClick={() => setConfirmDeleteId(null)}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        <p className="text-xs text-muted-foreground">
+          {variants.length} SKU{variants.length === 1 ? "" : "s"} · Deleting all SKUs will remove this
+          product.
+        </p>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CatalogProductCard({
+  p,
+  onClick,
+}: {
+  p: CatalogProductRow;
+  onClick: (p: CatalogProductRow) => void;
+}) {
+  return (
+    <Card
+      className="cursor-pointer border-border/60 shadow-sm transition-shadow hover:shadow-md"
+      onClick={() => onClick(p)}
+    >
       <CardHeader className="space-y-2 pb-2">
         <div className="flex items-start justify-between gap-2">
           <CardTitle className="text-base leading-snug">{p.name}</CardTitle>
@@ -92,24 +348,38 @@ function CatalogProductCard({ p }: { p: CatalogProductRow }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="text-xs text-muted-foreground">
-        {p._count?.variants ?? 0} SKU{(p._count?.variants ?? 0) === 1 ? "" : "s"} — stock only after
-        purchase receive
+        {p._count?.variants ?? 0} SKU{(p._count?.variants ?? 0) === 1 ? "" : "s"} — click to view &amp;
+        manage
       </CardContent>
     </Card>
   );
 }
 
-function CatalogBrowseByKind({ rows }: { rows: CatalogProductRow[] }) {
+function CatalogBrowseByKind({
+  rows,
+  onProductClick,
+}: {
+  rows: CatalogProductRow[];
+  onProductClick: (p: CatalogProductRow) => void;
+}) {
   const { apparel, accessory } = splitByProductKind(rows);
   return (
     <div className="space-y-8">
-      <CatalogKindSection title={kindLabel("APPAREL")} products={apparel} />
-      <CatalogKindSection title={kindLabel("ACCESSORY")} products={accessory} />
+      <CatalogKindSection title={kindLabel("APPAREL")} products={apparel} onProductClick={onProductClick} />
+      <CatalogKindSection title={kindLabel("ACCESSORY")} products={accessory} onProductClick={onProductClick} />
     </div>
   );
 }
 
-function CatalogKindSection({ title, products }: { title: string; products: CatalogProductRow[] }) {
+function CatalogKindSection({
+  title,
+  products,
+  onProductClick,
+}: {
+  title: string;
+  products: CatalogProductRow[];
+  onProductClick: (p: CatalogProductRow) => void;
+}) {
   return (
     <section className="space-y-3">
       <div className="flex items-baseline justify-between gap-2 border-b border-border/60 pb-2">
@@ -123,7 +393,7 @@ function CatalogKindSection({ title, products }: { title: string; products: Cata
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {products.map((p) => (
-            <CatalogProductCard key={p.id} p={p} />
+            <CatalogProductCard key={p.id} p={p} onClick={onProductClick} />
           ))}
         </div>
       )}
@@ -143,7 +413,6 @@ export function CatalogPage() {
   const [colors, setColors] = useState<Color[]>([]);
   const [sizes, setSizes] = useState<Size[]>([]);
   const [loadingRef, setLoadingRef] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
 
   const [pName, setPName] = useState("");
   const [pKind, setPKind] = useState<(typeof KINDS)[number]>("APPAREL");
@@ -166,27 +435,28 @@ export function CatalogPage() {
   const [productId, setProductId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const [skuDialogProduct, setSkuDialogProduct] = useState<CatalogProductRow | null>(null);
+
+  const [nameMatches, setNameMatches] = useState<CatalogProductRow[]>([]);
+  const [nameSearchLoading, setNameSearchLoading] = useState(false);
+
   const [sheetCatOpen, setSheetCatOpen] = useState(false);
   const [newCatName, setNewCatName] = useState("");
   const [newCatSlug, setNewCatSlug] = useState("");
   const [slugTouched, setSlugTouched] = useState(false);
   const [sheetCatBusy, setSheetCatBusy] = useState(false);
-  const [sheetCatErr, setSheetCatErr] = useState<string | null>(null);
 
   const [sheetColOpen, setSheetColOpen] = useState(false);
   const [newColName, setNewColName] = useState("");
   const [sheetColBusy, setSheetColBusy] = useState(false);
-  const [sheetColErr, setSheetColErr] = useState<string | null>(null);
 
   const [sheetSizeOpen, setSheetSizeOpen] = useState(false);
   const [newSizeLabel, setNewSizeLabel] = useState("");
   const [newSizeCode, setNewSizeCode] = useState("");
   const [sheetSizeBusy, setSheetSizeBusy] = useState(false);
-  const [sheetSizeErr, setSheetSizeErr] = useState<string | null>(null);
 
   const loadRef = useCallback(async () => {
     setLoadingRef(true);
-    setErr(null);
     try {
       const [cats, col, siz] = await Promise.all([
         apiGetJsonAuthedWithMeta<Category[]>("/api/v1/catalog/categories?limit=200"),
@@ -198,7 +468,7 @@ export function CatalogPage() {
       setSizes(siz.data);
       setPCategoryId((prev) => prev || cats.data[0]?.id || "");
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Failed to load reference data");
+      toast.error(e instanceof Error ? e.message : "Failed to load reference data");
     } finally {
       setLoadingRef(false);
     }
@@ -260,12 +530,19 @@ export function CatalogPage() {
     if (n >= 2 && n <= 4) setStep(n);
   }
 
+  function useExistingProduct(p: CatalogProductRow) {
+    setProductId(p.id);
+    setPName(p.name);
+    setPKind(p.kind as (typeof KINDS)[number]);
+    setNameMatches([]);
+    setStep(2);
+  }
+
   async function submitQuickCategory() {
-    setSheetCatErr(null);
     const name = newCatName.trim();
     const slug = newCatSlug.trim().toLowerCase();
     if (!name || !slug) {
-      setSheetCatErr("Name and internal code (slug) are required.");
+      toast.error("Name and internal code (slug) are required.");
       return;
     }
     setSheetCatBusy(true);
@@ -281,17 +558,16 @@ export function CatalogPage() {
       setNewCatName("");
       setNewCatSlug("");
     } catch (e) {
-      setSheetCatErr(e instanceof Error ? e.message : "Could not create category");
+      toast.error(e instanceof Error ? e.message : "Could not create category");
     } finally {
       setSheetCatBusy(false);
     }
   }
 
   async function submitQuickColor() {
-    setSheetColErr(null);
     const name = newColName.trim();
     if (!name) {
-      setSheetColErr("Colour name is required.");
+      toast.error("Colour name is required.");
       return;
     }
     setSheetColBusy(true);
@@ -305,18 +581,17 @@ export function CatalogPage() {
       setSheetColOpen(false);
       setNewColName("");
     } catch (e) {
-      setSheetColErr(e instanceof Error ? e.message : "Could not add colour");
+      toast.error(e instanceof Error ? e.message : "Could not add colour");
     } finally {
       setSheetColBusy(false);
     }
   }
 
   async function submitQuickSize() {
-    setSheetSizeErr(null);
     const label = newSizeLabel.trim();
     const code = newSizeCode.trim().toUpperCase();
     if (!label || !code) {
-      setSheetSizeErr("Label and code are required (code must be unique).");
+      toast.error("Label and code are required (code must be unique).");
       return;
     }
     setSheetSizeBusy(true);
@@ -331,7 +606,7 @@ export function CatalogPage() {
       setNewSizeLabel("");
       setNewSizeCode("");
     } catch (e) {
-      setSheetSizeErr(e instanceof Error ? e.message : "Could not add size");
+      toast.error(e instanceof Error ? e.message : "Could not add size");
     } finally {
       setSheetSizeBusy(false);
     }
@@ -339,7 +614,6 @@ export function CatalogPage() {
 
   useEffect(() => {
     if (!sheetCatOpen) return;
-    setSheetCatErr(null);
     setNewCatName("");
     setNewCatSlug("");
     setSlugTouched(false);
@@ -347,16 +621,45 @@ export function CatalogPage() {
 
   useEffect(() => {
     if (!sheetColOpen) return;
-    setSheetColErr(null);
     setNewColName("");
   }, [sheetColOpen]);
 
   useEffect(() => {
     if (!sheetSizeOpen) return;
-    setSheetSizeErr(null);
     setNewSizeLabel("");
     setNewSizeCode("");
   }, [sheetSizeOpen]);
+
+  useEffect(() => {
+    const q = pName.trim();
+    if (q.length < 2 || view !== "create" || step !== 1 || productId) {
+      setNameMatches([]);
+      return;
+    }
+    let cancelled = false;
+    const t = setTimeout(() => {
+      void (async () => {
+        setNameSearchLoading(true);
+        try {
+          const data = await apiGetJsonAuthed<CatalogProductRow[]>(
+            `/api/v1/catalog/products?search=${encodeURIComponent(q)}&limit=10`,
+          );
+          if (!cancelled) {
+            const lower = q.toLowerCase();
+            setNameMatches(data.filter((p) => p.name.toLowerCase().includes(lower)));
+          }
+        } catch {
+          if (!cancelled) setNameMatches([]);
+        } finally {
+          if (!cancelled) setNameSearchLoading(false);
+        }
+      })();
+    }, 350);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [pName, view, step, productId]);
 
   useEffect(() => {
     if (pKind !== "APPAREL" || selColors.length === 0 || selSizes.length === 0) {
@@ -378,11 +681,10 @@ export function CatalogPage() {
 
   async function persistStep1() {
     if (!pName.trim() || !pCategoryId) {
-      setErr("Name and category are required.");
+      toast.error("Name and category are required.");
       return;
     }
     setBusy(true);
-    setErr(null);
     try {
       const created = await apiPostJsonAuthed<{ id: string }>("/api/v1/catalog/products", {
         name: pName.trim(),
@@ -392,9 +694,10 @@ export function CatalogPage() {
         gender: pGender,
       });
       setProductId(created.id);
+      setNameMatches([]);
       setStep(2);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Failed to create product");
+      toast.error(e instanceof Error ? e.message : "Failed to create product");
     } finally {
       setBusy(false);
     }
@@ -403,7 +706,6 @@ export function CatalogPage() {
   async function persistStep2() {
     if (!productId) return;
     setBusy(true);
-    setErr(null);
     try {
       if (pKind === "ACCESSORY") {
         const sku = `${slugify(pName || "acc").toUpperCase()}-OS`.slice(0, 64);
@@ -428,7 +730,7 @@ export function CatalogPage() {
       setIgstPct("0");
       setStep(3);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Failed to create variants");
+      toast.error(e instanceof Error ? e.message : "Failed to create variants");
     } finally {
       setBusy(false);
     }
@@ -437,7 +739,6 @@ export function CatalogPage() {
   async function persistStep3() {
     if (!productId) return;
     setBusy(true);
-    setErr(null);
     try {
       const detail = await apiGetJsonAuthed<{
         variants: { id: string; sku: string }[];
@@ -461,7 +762,7 @@ export function CatalogPage() {
       }
       setStep(4);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Failed to update pricing");
+      toast.error(e instanceof Error ? e.message : "Failed to update pricing");
     } finally {
       setBusy(false);
     }
@@ -511,9 +812,16 @@ export function CatalogPage() {
         </div>
       </div>
 
-      {err ? <p className="text-sm text-destructive">{err}</p> : null}
-
       <SkuLookupCard />
+
+      <ProductSkuDialog
+        product={skuDialogProduct}
+        open={skuDialogProduct !== null}
+        onClose={() => setSkuDialogProduct(null)}
+        onProductDeleted={(id) =>
+          setCatalogRows((prev) => prev.filter((p) => p.id !== id))
+        }
+      />
 
       {view === "browse" ? (
         <div className="space-y-4">
@@ -530,7 +838,10 @@ export function CatalogPage() {
               </CardContent>
             </Card>
           ) : (
-            <CatalogBrowseByKind rows={catalogRows} />
+            <CatalogBrowseByKind
+              rows={catalogRows}
+              onProductClick={(p) => setSkuDialogProduct(p)}
+            />
           )}
         </div>
       ) : (
@@ -617,6 +928,48 @@ export function CatalogPage() {
               placeholder="e.g. Pro Training Tee"
               className="h-14 rounded-2xl border-2 border-border/70 bg-background px-4 text-lg font-semibold tracking-tight shadow-sm placeholder:font-normal placeholder:text-muted-foreground"
             />
+            {nameSearchLoading ? (
+              <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Loader2 className="size-3 animate-spin" /> Checking existing products…
+              </p>
+            ) : nameMatches.length > 0 ? (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/8 p-4 space-y-3">
+                <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
+                  {nameMatches.length === 1
+                    ? "A product with this name already exists."
+                    : `${nameMatches.length} products with a similar name already exist.`}{" "}
+                  Add the missing size or colour to an existing product instead of creating a duplicate.
+                </p>
+                <ul className="space-y-2">
+                  {nameMatches.map((p) => (
+                    <li
+                      key={p.id}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-background/80 px-3 py-2"
+                    >
+                      <div className="min-w-0">
+                        <span className="text-sm font-medium">{p.name}</span>
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          {p.category.name} · {p._count?.variants ?? 0} SKU
+                          {(p._count?.variants ?? 0) === 1 ? "" : "s"}
+                        </span>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        className="shrink-0 rounded-full"
+                        onClick={() => useExistingProduct(p)}
+                      >
+                        Add variants
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-xs text-muted-foreground">
+                  Keep typing a different name to create a brand-new product.
+                </p>
+              </div>
+            ) : null}
           </div>
 
           <div className="grid gap-6 sm:grid-cols-2">
@@ -1035,7 +1388,7 @@ export function CatalogPage() {
                 setMatrix([]);
                 setSelColors([]);
                 setSelSizes([]);
-                setErr(null);
+                setNameMatches([]);
               }}
             >
               Create another blueprint
@@ -1059,7 +1412,6 @@ export function CatalogPage() {
                 </SheetDescription>
               </SheetHeader>
               <div className="mt-6 grid gap-4">
-                {sheetCatErr ? <p className="text-sm text-destructive">{sheetCatErr}</p> : null}
                 <div className="space-y-2">
                   <Label>Display name</Label>
                   <Input
@@ -1105,7 +1457,6 @@ export function CatalogPage() {
                 <SheetDescription>Adds to your palette and selects it for this blueprint.</SheetDescription>
               </SheetHeader>
               <div className="mt-6 grid gap-4">
-                {sheetColErr ? <p className="text-sm text-destructive">{sheetColErr}</p> : null}
                 <div className="space-y-2">
                   <Label>Colour name</Label>
                   <Input
@@ -1134,7 +1485,6 @@ export function CatalogPage() {
                 <SheetDescription>Code must be unique — used in SKU generation and exports.</SheetDescription>
               </SheetHeader>
               <div className="mt-6 grid gap-4">
-                {sheetSizeErr ? <p className="text-sm text-destructive">{sheetSizeErr}</p> : null}
                 <div className="space-y-2">
                   <Label>Label (shown on bill)</Label>
                   <Input

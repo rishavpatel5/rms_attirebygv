@@ -3,6 +3,7 @@ import {
   Loader2,
   Minus,
   Plus,
+  RefreshCw,
   Search,
   Trash2,
 } from "lucide-react";
@@ -114,6 +115,7 @@ export function PurchasesPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [catalog, setCatalog] = useState<SearchProduct[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogRefreshKey, setCatalogRefreshKey] = useState(0);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [variants, setVariants] = useState<VariantRow[]>([]);
   const [variantsLoading, setVariantsLoading] = useState(false);
@@ -181,7 +183,7 @@ export function PurchasesPage() {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [authed, searchQuery]);
+  }, [authed, searchQuery, catalogRefreshKey]);
 
   useEffect(() => {
     if (!selectedProductId || !authed) {
@@ -404,7 +406,19 @@ export function PurchasesPage() {
               <CardContent className="p-0">
                 <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
                   <span className="text-sm font-medium">Master matches</span>
-                  <Badge variant="secondary">{catalogLoading ? "…" : purchasableCatalog.length}</Badge>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="size-7 text-muted-foreground hover:text-foreground"
+                      disabled={catalogLoading}
+                      onClick={() => setCatalogRefreshKey((k) => k + 1)}
+                    >
+                      <RefreshCw className={`size-3.5 ${catalogLoading ? "animate-spin" : ""}`} />
+                    </Button>
+                    <Badge variant="secondary">{catalogLoading ? "…" : purchasableCatalog.length}</Badge>
+                  </div>
                 </div>
                 <div className="max-h-[min(52vh,400px)] overflow-y-auto p-2">
                   {noResults ? (

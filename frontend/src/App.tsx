@@ -1,4 +1,6 @@
 import { createBrowserRouter, Navigate, RouterProvider } from "react-router-dom";
+import { Toaster } from "sonner";
+import { ExpensesPage } from "@/pages/expenses-page";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
 import { BillingPage } from "@/pages/billing-page";
 import { CatalogPage } from "@/pages/catalog-page";
@@ -33,6 +35,7 @@ const router = createBrowserRouter([
       { path: "dashboard/purchase-analysis", element: <PurchaseAnalysisPage /> },
       { path: "dashboard/reports", element: <ReportsPage /> },
       { path: "dashboard/offers", element: <OffersPage /> },
+      { path: "dashboard/expenses", element: <ExpensesPage /> },
       { path: "dashboard/settings", element: <SettingsPage /> },
       { path: "billing", element: <BillingPage /> },
     ],
@@ -40,5 +43,10 @@ const router = createBrowserRouter([
 ]);
 
 export function App() {
-  return <RouterProvider router={router} />;
+  return (
+    <>
+      <RouterProvider router={router} />
+      <Toaster position="top-right" richColors closeButton />
+    </>
+  );
 }

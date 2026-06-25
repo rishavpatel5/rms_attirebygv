@@ -10,7 +10,7 @@ export async function listVariantsForProduct(
 ) {
   const { page, limit, skip } = parsePagination(query);
   const isActive =
-    query.isActive === "false" ? false : query.isActive === "true" ? true : undefined;
+    query.isActive === "false" ? false : query.isActive === "true" ? true : true;
   const skuSearch =
     typeof query.search === "string" && query.search.trim().length > 0
       ? query.search.trim()
@@ -98,6 +98,15 @@ export async function createVariant(input: {
   const sku = input.sku.trim();
   if (sku.length < 2 || sku.length > 64) {
     throw new AppError(400, "INVALID_SKU", "Invalid SKU length");
+  }
+
+  // If an inactive (soft-deleted) variant is squatting on this SKU, free it first
+  const squatter = await prisma.productVariant.findUnique({ where: { sku }, select: { id: true, isActive: true } });
+  if (squatter && !squatter.isActive) {
+    await prisma.productVariant.update({
+      where: { id: squatter.id },
+      data: { sku: `${sku}__deleted_${squatter.id.slice(-8)}` },
+    });
   }
 
   const rateDefaults = defaultIntraStateGstPercentages(product.kind);
@@ -240,9 +249,10 @@ export async function deleteVariant(id: string): Promise<void> {
     );
   }
   if (v._count.orderItems > 0) {
+    // Soft-delete: mangle the SKU so the original is free for re-creation
     await prisma.productVariant.update({
       where: { id },
-      data: { isActive: false },
+      data: { isActive: false, sku: `${v.sku}__deleted_${id.slice(-8)}` },
     });
     return;
   }

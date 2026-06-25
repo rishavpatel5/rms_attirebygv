@@ -5,6 +5,7 @@ import {
   Minus,
   Plus,
   Receipt,
+  RefreshCw,
   Search,
   Trash2,
 } from "lucide-react";
@@ -104,6 +105,7 @@ export function BillingPos() {
   const searchRef = useRef<HTMLInputElement>(null);
   const [catalog, setCatalog] = useState<PosProduct[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogRefreshKey, setCatalogRefreshKey] = useState(0);
   const [saleMessage, setSaleMessage] = useState<string | null>(null);
   const [lastSale, setLastSale] = useState<LastSale | null>(null);
   const [saleBusy, setSaleBusy] = useState(false);
@@ -156,7 +158,7 @@ export function BillingPos() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [searchQuery]);
+  }, [searchQuery, catalogRefreshKey]);
 
   const filtered = catalog;
   const selected = useMemo(
@@ -395,9 +397,21 @@ export function BillingPos() {
               <CardContent className="p-0">
                 <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
                   <span className="text-sm font-medium">Catalog</span>
-                  <Badge variant="secondary">
-                    {catalogLoading ? "…" : filtered.length}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="size-7 text-muted-foreground hover:text-foreground"
+                      disabled={catalogLoading}
+                      onClick={() => setCatalogRefreshKey((k) => k + 1)}
+                    >
+                      <RefreshCw className={`size-3.5 ${catalogLoading ? "animate-spin" : ""}`} />
+                    </Button>
+                    <Badge variant="secondary">
+                      {catalogLoading ? "…" : filtered.length}
+                    </Badge>
+                  </div>
                 </div>
                 <ScrollArea className="h-[min(52vh,420px)]">
                   <ul className="divide-y divide-border/50 p-2">

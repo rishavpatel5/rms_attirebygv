@@ -13,11 +13,7 @@ export async function listProducts(query: Record<string, unknown>) {
   const kind = query.kind as ProductKind | undefined;
   const gender = query.gender as ProductGender | undefined;
   const isActive =
-    query.isActive === "true"
-      ? true
-      : query.isActive === "false"
-        ? false
-        : undefined;
+    query.isActive === "false" ? false : query.isActive === "true" ? true : true;
   const search =
     typeof query.search === "string" && query.search.trim().length > 0
       ? query.search.trim()
@@ -27,7 +23,8 @@ export async function listProducts(query: Record<string, unknown>) {
     ...(categoryId ? { categoryId } : {}),
     ...(kind ? { kind } : {}),
     ...(gender ? { gender } : {}),
-    ...(isActive === undefined ? {} : { isActive }),
+    isActive,
+    variants: { some: { isActive: true } },
     ...(search
       ? {
           OR: [
@@ -47,7 +44,7 @@ export async function listProducts(query: Record<string, unknown>) {
       orderBy: [{ updatedAt: "desc" }],
       include: {
         category: { select: { id: true, name: true, slug: true } },
-        _count: { select: { variants: true } },
+        _count: { select: { variants: { where: { isActive: true } } } },
       },
     }),
     prisma.product.count({ where }),
@@ -95,6 +92,15 @@ export async function createProduct(input: {
   if (!cat) {
     throw new AppError(404, "CATEGORY_NOT_FOUND", "Category not found");
   }
+  // If an inactive (soft-deleted) product is squatting on this slug, free it first
+  const squatter = await prisma.product.findUnique({ where: { slug }, select: { id: true, isActive: true } });
+  if (squatter && !squatter.isActive) {
+    await prisma.product.update({
+      where: { id: squatter.id },
+      data: { slug: `${slug}__deleted_${squatter.id.slice(-8)}` },
+    });
+  }
+
   try {
     return await prisma.product.create({
       data: {
@@ -190,9 +196,11 @@ export async function deleteProduct(id: string): Promise<void> {
     where: { variant: { productId: id } },
   });
   if (orderLines > 0) {
+    // Soft-delete: mangle slug so the original name/slug is free for re-creation
+    const existing = await prisma.product.findUnique({ where: { id }, select: { slug: true } });
     await prisma.product.update({
       where: { id },
-      data: { isActive: false },
+      data: { isActive: false, slug: `${existing?.slug ?? id}__deleted_${id.slice(-8)}` },
     });
     return;
   }

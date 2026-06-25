@@ -735,3 +735,33 @@ model WhatsAppLog {
   @@index([providerMessageId])
   @@map("whatsapp_logs")
 }
+
+// ---------------------------------------------------------------------------
+// Expenses
+// ---------------------------------------------------------------------------
+
+enum ExpenseCategory {
+  RENT
+  UTILITIES
+  SALARY
+  MARKETING
+  LOGISTICS
+  MAINTENANCE
+  OFFICE_SUPPLIES
+  MISCELLANEOUS
+}
+
+model Expense {
+  id          String          @id @default(cuid())
+  title       String
+  amount      Decimal         @db.Decimal(14, 2)
+  category    ExpenseCategory
+  date        DateTime        @db.Date
+  note        String?
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+
+  @@index([date(sort: Desc)])
+  @@index([category])
+  @@map("expenses")
+}

@@ -10,6 +10,7 @@ import {
   Package,
   PanelLeft,
   PanelLeftClose,
+  Receipt,
   Settings,
   ShoppingCart,
   Truck,
@@ -103,6 +104,7 @@ const MANAGE: NavItem[] = [
   { to: "/dashboard/purchase-analysis", label: "Purchase analysis", icon: ClipboardList },
   { to: "/dashboard/reports", label: "Reports", icon: BarChart2, step: 5 },
   { to: "/dashboard/offers", label: "Offers", icon: Gift },
+  { to: "/dashboard/expenses", label: "Expenses", icon: Receipt },
 ];
 
 export function AppSidebar({ className }: { className?: string }) {
