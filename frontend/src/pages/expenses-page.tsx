@@ -529,8 +529,8 @@ export function ExpensesPage() {
                 <BarChart data={monthlyChartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                   <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                  <YAxis tickFormatter={(v: number) => `₹${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 11 }} />
-                  <Tooltip formatter={(v: number) => fmtInr(v)} />
+                  <YAxis tickFormatter={(v) => `₹${(Number(v) / 1000).toFixed(0)}k`} tick={{ fontSize: 11 }} />
+                  <Tooltip formatter={(v) => fmtInr(Number(v))} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
                   {CATEGORIES.filter((c) =>
                     monthlyChartData.some((r) => (r[c] as number) > 0),
@@ -574,7 +574,7 @@ export function ExpensesPage() {
                         <Cell key={i} fill={entry.color} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(v: number) => fmtInr(v)} />
+                    <Tooltip formatter={(v) => fmtInr(Number(v))} />
                   </PieChart>
                 </ResponsiveContainer>
                 <ul className="mt-2 space-y-1">
