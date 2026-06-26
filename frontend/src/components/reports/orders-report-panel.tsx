@@ -23,6 +23,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { OrderInvoiceSheet } from "@/components/customers/order-invoice-sheet";
+import { ShareInvoiceWhatsAppButton } from "@/components/customers/share-invoice-whatsapp-button";
 import { voidSaleOrder } from "@/lib/billing-api";
 import { formatIstDateTime } from "@/lib/ist-time";
 import { cn } from "@/lib/utils";
@@ -196,7 +197,7 @@ export function OrdersReportPanel({ from, to }: Props) {
                   <TableHead className="text-right">GST</TableHead>
                   <TableHead className="text-right">Total</TableHead>
                   <TableHead>Payment</TableHead>
-                  <TableHead className="w-[140px]" />
+                  <TableHead className="w-[180px]" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -289,6 +290,15 @@ export function OrdersReportPanel({ from, to }: Props) {
                               <FileText className="size-3.5" />
                               Invoice
                             </Button>
+                            <ShareInvoiceWhatsAppButton
+                              compact
+                              phone={row.customer?.phone}
+                              customerName={row.customer?.fullName ?? ""}
+                              orderId={row.id}
+                              invoiceNumber={row.invoiceNumber}
+                              amountPaid={row.totals.grandTotal}
+                              documentType={row.documentType}
+                            />
                             <Button
                               type="button"
                               size="sm"
