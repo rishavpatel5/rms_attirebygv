@@ -57,11 +57,16 @@ const CATEGORIES = [
 
 type ExpenseCategory = (typeof CATEGORIES)[number];
 
+const PAYMENT_MODES = ["CASH", "UPI"] as const;
+type PaymentMode = (typeof PAYMENT_MODES)[number];
+const PAYMENT_MODE_LABELS: Record<PaymentMode, string> = { CASH: "Cash", UPI: "UPI" };
+
 type Expense = {
   id: string;
   title: string;
   amount: string;
   category: ExpenseCategory;
+  paymentMode: PaymentMode;
   date: string;
   note: string | null;
 };
@@ -125,12 +130,13 @@ type FormState = {
   title: string;
   amount: string;
   category: ExpenseCategory;
+  paymentMode: PaymentMode;
   date: string;
   note: string;
 };
 
 function blankForm(): FormState {
-  return { title: "", amount: "", category: "MISCELLANEOUS", date: todayYmd(), note: "" };
+  return { title: "", amount: "", category: "MISCELLANEOUS", paymentMode: "CASH", date: todayYmd(), note: "" };
 }
 
 // ─── Expense Form Dialog ─────────────────────────────────────────────────────
@@ -171,6 +177,7 @@ function ExpenseFormDialog({
         title: form.title.trim(),
         amount: amt,
         category: form.category,
+        paymentMode: form.paymentMode,
         date: form.date,
         note: form.note.trim() || null,
       };
@@ -229,19 +236,35 @@ function ExpenseFormDialog({
               />
             </div>
           </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Category</Label>
-            <select
-              className="flex h-10 w-full cursor-pointer rounded-xl border border-border bg-background px-3 text-sm"
-              value={form.category}
-              onChange={(e) => set("category")(e.target.value)}
-            >
-              {CATEGORIES.map((c) => (
-                <option key={c} value={c}>
-                  {CATEGORY_LABELS[c]}
-                </option>
-              ))}
-            </select>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Category</Label>
+              <select
+                className="flex h-10 w-full cursor-pointer rounded-xl border border-border bg-background px-3 text-sm"
+                value={form.category}
+                onChange={(e) => set("category")(e.target.value)}
+              >
+                {CATEGORIES.map((c) => (
+                  <option key={c} value={c}>
+                    {CATEGORY_LABELS[c]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Payment mode</Label>
+              <select
+                className="flex h-10 w-full cursor-pointer rounded-xl border border-border bg-background px-3 text-sm"
+                value={form.paymentMode}
+                onChange={(e) => set("paymentMode")(e.target.value)}
+              >
+                {PAYMENT_MODES.map((m) => (
+                  <option key={m} value={m}>
+                    {PAYMENT_MODE_LABELS[m]}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Note (optional)</Label>
@@ -368,6 +391,7 @@ export function ExpensesPage() {
       title: e.title,
       amount: String(Number(e.amount)),
       category: e.category,
+      paymentMode: e.paymentMode ?? "CASH",
       date: e.date.slice(0, 10),
       note: e.note ?? "",
     });
@@ -620,6 +644,7 @@ export function ExpensesPage() {
                   <TableHead>Date</TableHead>
                   <TableHead>Title</TableHead>
                   <TableHead>Category</TableHead>
+                  <TableHead>Payment</TableHead>
                   <TableHead>Note</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
                   <TableHead className="w-20" />
@@ -644,6 +669,9 @@ export function ExpensesPage() {
                         >
                           {CATEGORY_LABELS[e.category]}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {PAYMENT_MODE_LABELS[e.paymentMode] ?? e.paymentMode ?? "—"}
                       </TableCell>
                       <TableCell className="max-w-[200px] truncate text-xs text-muted-foreground">
                         {e.note ?? "—"}
@@ -676,7 +704,7 @@ export function ExpensesPage() {
                     </TableRow>
                     {confirmDeleteId === e.id ? (
                       <TableRow key={`${e.id}-confirm`}>
-                        <TableCell colSpan={6} className="bg-destructive/5 py-2">
+                        <TableCell colSpan={7} className="bg-destructive/5 py-2">
                           <div className="flex items-center gap-3 px-2">
                             <span className="flex-1 text-sm text-destructive">
                               Delete "{e.title}"?

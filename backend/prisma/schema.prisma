@@ -783,15 +783,21 @@ enum ExpenseCategory {
   MISCELLANEOUS
 }
 
+enum ExpensePaymentMode {
+  CASH
+  UPI
+}
+
 model Expense {
-  id          String          @id @default(cuid())
+  id          String             @id @default(cuid())
   title       String
-  amount      Decimal         @db.Decimal(14, 2)
+  amount      Decimal            @db.Decimal(14, 2)
   category    ExpenseCategory
-  date        DateTime        @db.Date
+  paymentMode ExpensePaymentMode @default(CASH) @map("payment_mode")
+  date        DateTime           @db.Date
   note        String?
-  createdAt   DateTime        @default(now()) @map("created_at")
-  updatedAt   DateTime        @updatedAt @map("updated_at")
+  createdAt   DateTime           @default(now()) @map("created_at")
+  updatedAt   DateTime           @updatedAt @map("updated_at")
 
   @@index([date(sort: Desc)])
   @@index([category])
