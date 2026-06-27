@@ -746,6 +746,7 @@ model WhatsAppLog {
 // ---------------------------------------------------------------------------
 
 enum BulkImportBatchStatus {
+  AWAITING_STOCK
   COMPLETED
   ROLLED_BACK
 }

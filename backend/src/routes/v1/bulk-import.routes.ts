@@ -4,7 +4,14 @@ import { authenticate } from "../../modules/auth/middleware/authenticate.middlew
 import { requireRoles } from "../../modules/auth/middleware/authorize-roles.middleware.js";
 import { ROLES_PURCHASE_WRITE } from "../../modules/auth/role-groups.js";
 import { asyncHandler } from "../../utils/async-handler.js";
-import { handleScan, handleCommit, handleListBatches, handleRollback } from "../../modules/bulk-import/bulk-import.controller.js";
+import {
+  handleScan,
+  handleCommit,
+  handleCommitCatalog,
+  handleCommitStock,
+  handleListBatches,
+  handleRollback,
+} from "../../modules/bulk-import/bulk-import.controller.js";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -23,5 +30,7 @@ export const bulkImportRouter = Router();
 
 bulkImportRouter.post("/scan", ...write, upload.single("file"), asyncHandler(handleScan));
 bulkImportRouter.post("/commit", ...write, asyncHandler(handleCommit));
+bulkImportRouter.post("/commit-catalog", ...write, asyncHandler(handleCommitCatalog));
+bulkImportRouter.post("/commit-stock", ...write, asyncHandler(handleCommitStock));
 bulkImportRouter.get("/batches", ...write, asyncHandler(handleListBatches));
 bulkImportRouter.post("/batches/:id/rollback", ...write, asyncHandler(handleRollback));

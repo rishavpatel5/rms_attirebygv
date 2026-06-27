@@ -277,32 +277,49 @@ const skuLookupInclude = {
   inventory: { select: { quantity: true } },
 } as const;
 
-/** Check whether a SKU exists in the master catalog (exact + close partial matches). */
+/** Live catalog search by product name OR SKU (for the catalog search bar). */
 export async function lookupVariantsBySku(query: Record<string, unknown>) {
-  const sku = typeof query.sku === "string" ? query.sku.trim() : "";
-  if (!sku || sku.length < 2) {
-    throw new AppError(400, "SKU_REQUIRED", "Enter a SKU to look up (at least 2 characters)");
+  const raw =
+    typeof query.sku === "string"
+      ? query.sku
+      : typeof query.q === "string"
+        ? query.q
+        : "";
+  const q = raw.trim();
+  if (!q || q.length < 2) {
+    throw new AppError(400, "QUERY_REQUIRED", "Enter at least 2 characters to search");
   }
 
-  const exactMatch = await prisma.productVariant.findFirst({
-    where: { sku: { equals: sku, mode: "insensitive" } },
+  // Token search: each whitespace-separated word must match somewhere
+  // (name / SKU / color / size / category / brand). This makes "camo flex"
+  // match "Camoflex" (both tokens are substrings) and "baggy black" match a
+  // Baggy product whose SKU contains "Black".
+  const tokens = q.split(/\s+/).filter(Boolean);
+  const matches = await prisma.productVariant.findMany({
+    where: {
+      isActive: true,
+      AND: tokens.map((tok) => ({
+        OR: [
+          { sku: { contains: tok, mode: "insensitive" as const } },
+          { product: { name: { contains: tok, mode: "insensitive" as const } } },
+          { product: { brand: { contains: tok, mode: "insensitive" as const } } },
+          { product: { category: { name: { contains: tok, mode: "insensitive" as const } } } },
+          { color: { name: { contains: tok, mode: "insensitive" as const } } },
+          { size: { label: { contains: tok, mode: "insensitive" as const } } },
+        ],
+      })),
+    },
+    take: 50,
+    orderBy: [{ product: { name: "asc" } }, { sku: "asc" }],
     include: skuLookupInclude,
   });
 
-  const partialMatches =
-    exactMatch === null
-      ? await prisma.productVariant.findMany({
-          where: { sku: { contains: sku, mode: "insensitive" } },
-          take: 8,
-          orderBy: { sku: "asc" },
-          include: skuLookupInclude,
-        })
-      : [];
+  const exactMatch = matches.find((m) => m.sku.toLowerCase() === q.toLowerCase()) ?? null;
 
   return {
-    query: sku,
-    exists: exactMatch !== null,
+    query: q,
+    exists: matches.length > 0,
     exactMatch,
-    partialMatches,
+    matches,
   };
 }

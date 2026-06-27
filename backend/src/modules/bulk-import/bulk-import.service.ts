@@ -11,6 +11,43 @@ const EXPECTED_HEADERS = [
   "supplier_name", "gst_inclusive",
 ] as const;
 
+// Map friendly spreadsheet values → the actual Prisma enum values, so a sheet
+// that says MALE/FEMALE/CLOTHING still imports instead of crashing at commit
+// with an invalid-enum error. Anything unmapped becomes a clean scan error.
+const KIND_MAP: Record<string, ProductKind> = {
+  APPAREL: ProductKind.APPAREL,
+  APPARELS: ProductKind.APPAREL,
+  CLOTHING: ProductKind.APPAREL,
+  CLOTHES: ProductKind.APPAREL,
+  ACCESSORY: ProductKind.ACCESSORY,
+  ACCESSORIES: ProductKind.ACCESSORY,
+  ACC: ProductKind.ACCESSORY,
+};
+const GENDER_MAP: Record<string, ProductGender> = {
+  MENS: ProductGender.MENS,
+  MEN: ProductGender.MENS,
+  MALE: ProductGender.MENS,
+  MAN: ProductGender.MENS,
+  "MEN'S": ProductGender.MENS,
+  WOMENS: ProductGender.WOMENS,
+  WOMEN: ProductGender.WOMENS,
+  FEMALE: ProductGender.WOMENS,
+  WOMAN: ProductGender.WOMENS,
+  LADIES: ProductGender.WOMENS,
+  "WOMEN'S": ProductGender.WOMENS,
+  UNISEX: ProductGender.UNISEX,
+  UNI: ProductGender.UNISEX,
+  KIDS: ProductGender.KIDS,
+  KID: ProductGender.KIDS,
+  CHILDREN: ProductGender.KIDS,
+  BOYS: ProductGender.KIDS,
+  GIRLS: ProductGender.KIDS,
+  NOT_APPLICABLE: ProductGender.NOT_APPLICABLE,
+  NA: ProductGender.NOT_APPLICABLE,
+  "N/A": ProductGender.NOT_APPLICABLE,
+  NONE: ProductGender.NOT_APPLICABLE,
+};
+
 // ── Jaro-Winkler fuzzy similarity ──────────────────────────────────────────
 
 function jaroSim(a: string, b: string): number {
@@ -128,9 +165,28 @@ export type CommitResult = {
   newVariantsCreated: number;
 };
 
+// Step 1 result — catalog only, no stock received yet.
+export type CatalogResult = {
+  batchId: string;
+  rowsImported: number;
+  newCategoriesCreated: number;
+  newColorsCreated: number;
+  newSizesCreated: number;
+  newProductsCreated: number;
+  newVariantsCreated: number;
+};
+
+// Step 2 result — stock received against an already-created catalog batch.
+export type StockResult = {
+  batchId: string;
+  purchaseOrderIds: string[];
+  rowsImported: number;
+  unitsReceived: number;
+};
+
 export type BatchListItem = {
   id: string;
-  status: "COMPLETED" | "ROLLED_BACK";
+  status: "AWAITING_STOCK" | "COMPLETED" | "ROLLED_BACK";
   rowsImported: number;
   poCount: number;
   createdAt: string;
@@ -218,8 +274,10 @@ export async function scanImportFile(buffer: Buffer): Promise<ScanResult> {
     const product_name = strCell(row[1]);
     const sku = strCell(row[2]);
     const shelf_category = strCell(row[3]);
-    const kind = strCell(row[4]).toUpperCase();
-    const gender = strCell(row[5]).toUpperCase();
+    const kindRaw = strCell(row[4]).toUpperCase();
+    const genderRaw = strCell(row[5]).toUpperCase();
+    const kind = KIND_MAP[kindRaw] ?? ""; // mapped enum value, or "" when invalid
+    const gender = GENDER_MAP[genderRaw] ?? "";
     const brand = strCell(row[6]);
     const color = strCell(row[7]);
     const size = strCell(row[8]);
@@ -247,13 +305,13 @@ export async function scanImportFile(buffer: Buffer): Promise<ScanResult> {
     if (!shelf_category) errors.push("Shelf category is required");
     if (!supplier_name) errors.push("Supplier name is required");
     if (!quantity || isNaN(quantity) || quantity <= 0) errors.push("Quantity must be > 0");
+    else if (!Number.isInteger(quantity)) errors.push("Quantity must be a whole number");
     if (isNaN(cost_price) || cost_price < 0) errors.push("Cost price must be ≥ 0");
     if (isNaN(list_price) || list_price < 0) errors.push("List price must be ≥ 0");
 
-    const KINDS = ["APPAREL", "FOOTWEAR", "ACCESSORY"];
-    const GENDERS = ["MALE", "FEMALE", "UNISEX", "KIDS"];
-    if (!KINDS.includes(kind)) errors.push(`Kind must be one of: ${KINDS.join(", ")}`);
-    if (!GENDERS.includes(gender)) errors.push(`Gender must be one of: ${GENDERS.join(", ")}`);
+    if (!kind) errors.push(`Kind must be APPAREL or ACCESSORY (got "${kindRaw || "empty"}")`);
+    if (!gender)
+      errors.push(`Gender must be MENS, WOMENS, UNISEX or KIDS (got "${genderRaw || "empty"}")`);
 
     if (sku) {
       if (seenSkus.has(sku.toLowerCase())) {
@@ -372,26 +430,20 @@ export async function scanImportFile(buffer: Buffer): Promise<ScanResult> {
 // Phase 2 – receiving (transaction per supplier): PO + items + inventory
 //   movements. This is the section that truly requires atomicity.
 
-export async function commitImport(
+// ── STEP 1: Catalog only (no stock) ──────────────────────────────────────────
+// Creates colors, sizes, categories, products and variants. Marks the batch
+// AWAITING_STOCK. No purchase orders or inventory movements happen here, so a
+// failure mid-way can never leave stock half-applied.
+export async function commitCatalog(
   input: CommitRequest,
   createdById: string | null,
-): Promise<CommitResult> {
-  type PoLine = {
-    supplierId: string;
-    variantId: string;
-    quantity: number;
-    unitCost: number;
-    cgst: number; sgst: number; igst: number;
-    gstInclusive: boolean;
-  };
-
+): Promise<CatalogResult> {
   let newCategoriesCreated = 0, newColorsCreated = 0, newSizesCreated = 0;
   let newProductsCreated = 0, newVariantsCreated = 0;
-  const poLines: PoLine[] = [];
 
-  // Create the batch record up-front so POs can reference it
+  // Create the batch up-front, marked AWAITING_STOCK until step 2 receives stock.
   const batch = await prisma.bulkImportBatch.create({
-    data: { rowsImported: input.rows.length, createdById, status: "COMPLETED" },
+    data: { rowsImported: input.rows.length, createdById, status: "AWAITING_STOCK" },
   });
 
   // ── Phase 1: Catalog — no wrapping transaction ──────────────────────────
@@ -445,9 +497,6 @@ export async function commitImport(
 
   // 1d. Products + variants
   const productMap = new Map<string, string>();
-  const actorId = createdById
-    ? (await prisma.user.findUnique({ where: { id: createdById }, select: { id: true } }))?.id ?? null
-    : null;
 
   for (const row of input.rows) {
     const r = row.raw;
@@ -456,83 +505,134 @@ export async function commitImport(
     const resolvedColor = row.colorId ?? (r.color ? colorMap.get(r.color.toLowerCase()) : undefined);
     const resolvedSize  = row.sizeId  ?? (r.size  ? sizeMap.get(r.size.toLowerCase())   : undefined);
 
-    let variantId: string;
+    if (row.action === "receive_only") continue; // variant already exists — nothing to create
 
-    if (row.action === "receive_only" && row.variantId) {
-      variantId = row.variantId;
-    } else {
-      let productId = row.productId;
+    let productId = row.productId;
 
-      if (row.action === "create_product_and_variant") {
-        const nameKey = r.product_name.toLowerCase();
-        if (productMap.has(nameKey)) {
-          productId = productMap.get(nameKey)!;
-        } else {
-          const base = r.product_name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-          const slug = await uniqueSlug(base);
-          const p = await prisma.product.create({
-            data: {
-              name: r.product_name, slug,
-              brand: r.brand || null,
-              kind: r.kind as ProductKind,
-              gender: r.gender as ProductGender,
-              categoryId: resolvedCategory!,
-            },
-          });
-          productId = p.id;
-          productMap.set(nameKey, p.id);
-          newProductsCreated++;
-        }
+    if (row.action === "create_product_and_variant") {
+      const nameKey = r.product_name.toLowerCase();
+      if (productMap.has(nameKey)) {
+        productId = productMap.get(nameKey)!;
+      } else {
+        const base = r.product_name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+        const slug = await uniqueSlug(base);
+        const p = await prisma.product.create({
+          data: {
+            name: r.product_name, slug,
+            brand: r.brand || null,
+            kind: r.kind as ProductKind,
+            gender: r.gender as ProductGender,
+            categoryId: resolvedCategory!,
+          },
+        });
+        productId = p.id;
+        productMap.set(nameKey, p.id);
+        newProductsCreated++;
       }
-
-      if (!productId) throw new Error(`Row ${row.rowNum}: no product ID resolved`);
-
-      // Nested create: variant + inventoryBalance in one atomic implicit transaction
-      const v = await prisma.productVariant.create({
-        data: {
-          productId, sku: r.sku,
-          listPrice: new Prisma.Decimal(r.list_price),
-          costPrice: r.cost_price > 0 ? new Prisma.Decimal(r.cost_price) : null,
-          gstEnabled: true,
-          gstPricingMode: r.gst_inclusive ? GstPricingMode.INCLUSIVE : GstPricingMode.EXCLUSIVE,
-          cgstRate: new Prisma.Decimal(r.cgst_pct),
-          sgstRate: new Prisma.Decimal(r.sgst_pct),
-          igstRate: new Prisma.Decimal(r.igst_pct),
-          lowStockThreshold: r.low_stock_threshold ?? null,
-          colorId: resolvedColor ?? null,
-          sizeId:  resolvedSize  ?? null,
-          inventory: { create: { quantity: 0 } },
-        },
-      });
-      variantId = v.id;
-      newVariantsCreated++;
     }
 
+    if (!productId) throw new Error(`Row ${row.rowNum}: no product ID resolved`);
+
+    // Nested create: variant + inventoryBalance in one atomic implicit transaction
+    await prisma.productVariant.create({
+      data: {
+        productId, sku: r.sku,
+        listPrice: new Prisma.Decimal(r.list_price),
+        costPrice: r.cost_price > 0 ? new Prisma.Decimal(r.cost_price) : null,
+        gstEnabled: true,
+        gstPricingMode: r.gst_inclusive ? GstPricingMode.INCLUSIVE : GstPricingMode.EXCLUSIVE,
+        cgstRate: new Prisma.Decimal(r.cgst_pct),
+        sgstRate: new Prisma.Decimal(r.sgst_pct),
+        igstRate: new Prisma.Decimal(r.igst_pct),
+        lowStockThreshold:
+          r.low_stock_threshold != null ? Math.max(0, Math.floor(r.low_stock_threshold)) : null,
+        colorId: resolvedColor ?? null,
+        sizeId:  resolvedSize  ?? null,
+        inventory: { create: { quantity: 0 } },
+      },
+    });
+    newVariantsCreated++;
+  }
+
+  return {
+    batchId: batch.id,
+    rowsImported: input.rows.length,
+    newCategoriesCreated,
+    newColorsCreated,
+    newSizesCreated,
+    newProductsCreated,
+    newVariantsCreated,
+  };
+}
+
+// ── STEP 2: Receive stock against an existing catalog batch ──────────────────
+// Resolves every row's variant by SKU (the catalog step created them), then
+// creates one purchase order per supplier and applies inventory movements.
+// Only runs once the catalog exists, so stock can never be half-applied.
+export async function commitStock(
+  batchId: string,
+  input: CommitRequest,
+  receivedById: string | null,
+): Promise<StockResult> {
+  type PoLine = {
+    supplierId: string;
+    variantId: string;
+    quantity: number;
+    unitCost: number;
+    cgst: number; sgst: number; igst: number;
+    gstInclusive: boolean;
+  };
+
+  const batch = await prisma.bulkImportBatch.findUnique({ where: { id: batchId } });
+  if (!batch) throw new AppError(404, "BATCH_NOT_FOUND", "Import batch not found");
+  if (batch.status === "COMPLETED") {
+    throw new AppError(409, "ALREADY_RECEIVED", "Stock has already been received for this import");
+  }
+  if (batch.status === "ROLLED_BACK") {
+    throw new AppError(409, "ROLLED_BACK", "This import has been rolled back");
+  }
+
+  const actorId = receivedById
+    ? (await prisma.user.findUnique({ where: { id: receivedById }, select: { id: true } }))?.id ?? null
+    : null;
+
+  // Resolve every SKU to its variant (all should exist after the catalog step).
+  const skus = input.rows.map((r) => r.raw.sku);
+  const variants = await prisma.productVariant.findMany({
+    where: { sku: { in: skus } },
+    select: { id: true, sku: true },
+  });
+  const skuToId = new Map(variants.map((v) => [v.sku.toLowerCase(), v.id]));
+
+  const missing: string[] = [];
+  const poLines: PoLine[] = [];
+  for (const row of input.rows) {
+    const variantId = skuToId.get(row.raw.sku.toLowerCase());
+    if (!variantId) {
+      missing.push(row.raw.sku);
+      continue;
+    }
     poLines.push({
       supplierId: row.supplierId,
       variantId,
-      quantity: r.quantity,
-      unitCost: r.cost_price,
-      cgst: r.cgst_pct,
-      sgst: r.sgst_pct,
-      igst: r.igst_pct,
-      gstInclusive: r.gst_inclusive,
+      quantity: row.raw.quantity,
+      unitCost: row.raw.cost_price,
+      cgst: row.raw.cgst_pct,
+      sgst: row.raw.sgst_pct,
+      igst: row.raw.igst_pct,
+      gstInclusive: row.raw.gst_inclusive,
     });
   }
+  if (missing.length > 0) {
+    throw new AppError(
+      400,
+      "CATALOG_INCOMPLETE",
+      `These SKUs are not in the catalog yet — create the catalog first: ${missing.join(", ")}`,
+    );
+  }
 
-  // ── Phase 2: PO + receiving (no wrapping transaction) ───────────────────
-  //
-  // Supabase cloud DB latency (~200-500 ms per query) makes long-running
-  // Prisma interactive transactions infeasible for large import batches.
-  // Each individual write below is atomic on its own:
-  //   • purchaseOrder.create / update    → single SQL INSERT / UPDATE
-  //   • purchaseOrderItem.create/update  → single SQL INSERT / UPDATE
-  //   • inventoryBalance.updateMany      → single SQL UPDATE (atomic delta)
-  //   • inventoryLog.create              → single SQL INSERT
-  // The trade-off: if the server crashes mid-import the PO may be partial,
-  // but the scan→commit flow is admin-only and any partial state is visible
-  // and correctable via the Purchases page.
-
+  // Supabase cloud DB latency makes long interactive transactions infeasible;
+  // each write below is atomic on its own (INSERT / atomic-delta UPDATE).
   const bySupplier = new Map<string, PoLine[]>();
   for (const l of poLines) {
     const g = bySupplier.get(l.supplierId) ?? [];
@@ -541,6 +641,7 @@ export async function commitImport(
   }
 
   const poIds: string[] = [];
+  let unitsReceived = 0;
 
   for (const [supplierId, lines] of bySupplier) {
     const computed = lines.map((l) =>
@@ -637,6 +738,7 @@ export async function commitImport(
         where: { id: it.id },
         data: { quantityReceived: it.quantity },
       });
+      unitsReceived += it.quantity;
     }
 
     await prisma.purchaseOrder.update({
@@ -647,16 +749,37 @@ export async function commitImport(
     poIds.push(po.id);
   }
 
+  // Catalog + stock both done — the batch is now complete.
+  await prisma.bulkImportBatch.update({
+    where: { id: batchId },
+    data: { status: "COMPLETED" },
+  });
+
   return {
-    success: true,
-    batchId: batch.id,
+    batchId,
     purchaseOrderIds: poIds,
     rowsImported: input.rows.length,
-    newCategoriesCreated,
-    newColorsCreated,
-    newSizesCreated,
-    newProductsCreated,
-    newVariantsCreated,
+    unitsReceived,
+  };
+}
+
+// Backward-compatible single-shot: catalog then stock in one call.
+export async function commitImport(
+  input: CommitRequest,
+  createdById: string | null,
+): Promise<CommitResult> {
+  const cat = await commitCatalog(input, createdById);
+  const stock = await commitStock(cat.batchId, input, createdById);
+  return {
+    success: true,
+    batchId: cat.batchId,
+    purchaseOrderIds: stock.purchaseOrderIds,
+    rowsImported: cat.rowsImported,
+    newCategoriesCreated: cat.newCategoriesCreated,
+    newColorsCreated: cat.newColorsCreated,
+    newSizesCreated: cat.newSizesCreated,
+    newProductsCreated: cat.newProductsCreated,
+    newVariantsCreated: cat.newVariantsCreated,
   };
 }
 

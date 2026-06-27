@@ -1,6 +1,6 @@
 import { ChevronLeft, ChevronRight, Loader2, PackagePlus, Palette, Pencil, Plus, Rows3, Ruler, Tag, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ColorLabel } from "@/components/catalog/color-dot";
 import { SkuLookupCard } from "@/components/catalog/sku-lookup-card";
@@ -194,7 +194,7 @@ function ProductSkuDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="flex max-h-[85vh] max-w-lg flex-col">
         <DialogHeader>
           <DialogTitle className="leading-snug">{product?.name ?? ""}</DialogTitle>
         </DialogHeader>
@@ -207,7 +207,7 @@ function ProductSkuDialog({
         ) : variants.length === 0 && !loading ? (
           <p className="py-6 text-center text-sm text-muted-foreground">No variants on this product.</p>
         ) : (
-          <ul className="divide-y divide-border/60 overflow-hidden rounded-xl border border-border/60">
+          <ul className="min-h-0 flex-1 divide-y divide-border/60 overflow-y-auto rounded-xl border border-border/60">
             {variants.map((v) => {
               const isEditing = editingId === v.id;
               const isDeleting = deletingId === v.id;
@@ -401,12 +401,38 @@ function CatalogKindSection({
   );
 }
 
+function BrandPill({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+        active
+          ? "border-primary bg-primary text-primary-foreground shadow-sm"
+          : "border-border/60 bg-background text-muted-foreground hover:border-border hover:text-foreground",
+      )}
+    >
+      {label}
+    </button>
+  );
+}
+
 export function CatalogPage() {
   if (!getStoredAccessToken()) return <AuthGate />;
 
   const [view, setView] = useState<"browse" | "create">("browse");
   const [catalogRows, setCatalogRows] = useState<CatalogProductRow[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
+  const [activeBrand, setActiveBrand] = useState<string | null>(null); // null = All brands
 
   const [step, setStep] = useState(1);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -768,6 +794,30 @@ export function CatalogPage() {
     }
   }
 
+  // Distinct brands across the catalog (for the brand switcher pills).
+  // NOTE: these hooks must stay above any early return so hook order is stable.
+  const brands = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of catalogRows) if (p.brand?.trim()) set.add(p.brand.trim());
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [catalogRows]);
+
+  // Products shown in the grid, filtered by the active brand (null = All).
+  const visibleRows = useMemo(
+    () => (activeBrand ? catalogRows.filter((p) => p.brand === activeBrand) : catalogRows),
+    [catalogRows, activeBrand],
+  );
+
+  // Global search → jump to the picked product's brand and open it.
+  const handlePickSearch = useCallback(
+    (match: { product: { id: string; brand: string | null } }) => {
+      setActiveBrand(match.product.brand?.trim() || null);
+      const row = catalogRows.find((p) => p.id === match.product.id);
+      if (row) setSkuDialogProduct(row);
+    },
+    [catalogRows],
+  );
+
   if (loadingRef) {
     return (
       <div className="flex items-center gap-2 py-20 text-muted-foreground">
@@ -812,7 +862,7 @@ export function CatalogPage() {
         </div>
       </div>
 
-      <SkuLookupCard />
+      <SkuLookupCard onPick={handlePickSearch} />
 
       <ProductSkuDialog
         product={skuDialogProduct}
@@ -825,6 +875,17 @@ export function CatalogPage() {
 
       {view === "browse" ? (
         <div className="space-y-4">
+          {brands.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="mr-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Brand
+              </span>
+              <BrandPill label="All brands" active={activeBrand === null} onClick={() => setActiveBrand(null)} />
+              {brands.map((b) => (
+                <BrandPill key={b} label={b} active={activeBrand === b} onClick={() => setActiveBrand(b)} />
+              ))}
+            </div>
+          ) : null}
           {catalogLoading ? (
             <div className="flex items-center gap-2 py-16 text-muted-foreground">
               <Loader2 className="size-5 animate-spin" />
@@ -837,9 +898,18 @@ export function CatalogPage() {
                 to create your first product identity.
               </CardContent>
             </Card>
+          ) : visibleRows.length === 0 ? (
+            <Card className="border-dashed border-border/70 bg-muted/15">
+              <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                No products under <strong className="text-foreground">{activeBrand}</strong>.{" "}
+                <button type="button" className="underline" onClick={() => setActiveBrand(null)}>
+                  Show all brands
+                </button>
+              </CardContent>
+            </Card>
           ) : (
             <CatalogBrowseByKind
-              rows={catalogRows}
+              rows={visibleRows}
               onProductClick={(p) => setSkuDialogProduct(p)}
             />
           )}

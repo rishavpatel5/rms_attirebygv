@@ -84,9 +84,9 @@ type CommitRow = {
   sizeIsNew?: boolean;
 };
 
-type CommitResult = {
+// Step 1 — catalog only (no stock yet).
+type CatalogResult = {
   batchId: string;
-  purchaseOrderIds: string[];
   rowsImported: number;
   newCategoriesCreated: number;
   newColorsCreated: number;
@@ -95,9 +95,17 @@ type CommitResult = {
   newVariantsCreated: number;
 };
 
+// Step 2 — stock received against the catalog batch.
+type StockResult = {
+  batchId: string;
+  purchaseOrderIds: string[];
+  rowsImported: number;
+  unitsReceived: number;
+};
+
 type BatchListItem = {
   id: string;
-  status: "COMPLETED" | "ROLLED_BACK";
+  status: "AWAITING_STOCK" | "COMPLETED" | "ROLLED_BACK";
   rowsImported: number;
   poCount: number;
   createdAt: string;
@@ -111,7 +119,14 @@ type RollbackResult = {
 };
 
 type PageTab = "import" | "history";
-type ImportState = "idle" | "scanning" | "preview" | "committing" | "done";
+type ImportState =
+  | "idle"
+  | "scanning"
+  | "preview"
+  | "creating-catalog"
+  | "catalog-ready"
+  | "receiving-stock"
+  | "done";
 type FilterTab = "all" | "green" | "amber" | "red";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -142,7 +157,8 @@ export function BulkImportPage() {
   // Import flow state
   const [importState, setImportState] = useState<ImportState>("idle");
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
-  const [importResult, setImportResult] = useState<CommitResult | null>(null);
+  const [catalogResult, setCatalogResult] = useState<CatalogResult | null>(null);
+  const [importResult, setImportResult] = useState<StockResult | null>(null);
   const [filterTab, setFilterTab] = useState<FilterTab>("all");
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -237,12 +253,10 @@ export function BulkImportPage() {
     [handleFile],
   );
 
-  const handleCommit = useCallback(async () => {
-    if (!scanResult || scanResult.redCount > 0) return;
-
-    setImportState("committing");
-
-    const rows: CommitRow[] = scanResult.rows
+  // Build the commit payload from the (non-red) scan rows.
+  const buildRows = useCallback((): CommitRow[] => {
+    if (!scanResult) return [];
+    return scanResult.rows
       .filter((r) => r.status !== "red")
       .map((r) => ({
         rowNum: r.rowNum,
@@ -258,21 +272,49 @@ export function BulkImportPage() {
         sizeId: r.sizeId,
         sizeIsNew: r.sizeIsNew,
       }));
+  }, [scanResult]);
 
+  // STEP 1 — create catalog only (products + variants). No stock yet.
+  const handleCreateCatalog = useCallback(async () => {
+    if (!scanResult || scanResult.redCount > 0) return;
+    setImportState("creating-catalog");
     try {
-      const result = await apiPostJsonAuthed<CommitResult>("/api/v1/bulk-import/commit", { rows });
-      setImportResult(result);
-      setImportState("done");
-      toast.success(`Import complete — ${result.rowsImported} rows received into stock`);
+      const result = await apiPostJsonAuthed<CatalogResult>("/api/v1/bulk-import/commit-catalog", {
+        rows: buildRows(),
+      });
+      setCatalogResult(result);
+      setImportState("catalog-ready");
+      toast.success(
+        `Catalog ready — ${result.newProductsCreated} new product(s), ${result.newVariantsCreated} new variant(s)`,
+      );
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Import failed");
+      toast.error(err instanceof Error ? err.message : "Catalog creation failed");
       setImportState("preview");
     }
-  }, [scanResult]);
+  }, [scanResult, buildRows]);
+
+  // STEP 2 — receive stock against the catalog batch (after confirmation).
+  const handleReceiveStock = useCallback(async () => {
+    if (!catalogResult) return;
+    setImportState("receiving-stock");
+    try {
+      const result = await apiPostJsonAuthed<StockResult>("/api/v1/bulk-import/commit-stock", {
+        batchId: catalogResult.batchId,
+        rows: buildRows(),
+      });
+      setImportResult(result);
+      setImportState("done");
+      toast.success(`Stock received — ${result.unitsReceived} unit(s) added`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Receiving stock failed");
+      setImportState("catalog-ready");
+    }
+  }, [catalogResult, buildRows]);
 
   const handleReset = () => {
     setImportState("idle");
     setScanResult(null);
+    setCatalogResult(null);
     setImportResult(null);
     setFilterTab("all");
     if (inputRef.current) inputRef.current.value = "";
@@ -364,15 +406,16 @@ export function BulkImportPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Bulk Import</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Upload an Excel sheet to scan, preview, and receive stock in one step.
+            Upload an Excel sheet to scan and preview, then create the catalog and receive stock in two safe steps.
           </p>
         </div>
-        {(importState === "preview" || importState === "done") && tab === "import" && (
-          <Button variant="outline" size="sm" onClick={handleReset}>
-            <RotateCcw className="size-3.5" />
-            Start over
-          </Button>
-        )}
+        {(importState === "preview" || importState === "catalog-ready" || importState === "done") &&
+          tab === "import" && (
+            <Button variant="outline" size="sm" onClick={handleReset}>
+              <RotateCcw className="size-3.5" />
+              Start over
+            </Button>
+          )}
       </div>
 
       {/* Page tabs */}
@@ -405,6 +448,10 @@ export function BulkImportPage() {
           {/* Steps indicator */}
           <div className="flex items-center gap-2 text-sm">
             {(["Upload", "Preview", "Import"] as const).map((label, idx) => {
+              const inImport =
+                importState === "creating-catalog" ||
+                importState === "catalog-ready" ||
+                importState === "receiving-stock";
               const stepState =
                 idx === 0
                   ? importState === "idle" || importState === "scanning"
@@ -413,10 +460,10 @@ export function BulkImportPage() {
                   : idx === 1
                     ? importState === "preview"
                       ? "active"
-                      : importState === "committing" || importState === "done"
+                      : inImport || importState === "done"
                         ? "done"
                         : "pending"
-                    : importState === "committing"
+                    : inImport
                       ? "active"
                       : importState === "done"
                         ? "done"
@@ -600,26 +647,102 @@ export function BulkImportPage() {
               <div className="flex items-center justify-between pt-2">
                 <p className="text-sm text-muted-foreground">
                   {canImport
-                    ? `${importCount} row${importCount !== 1 ? "s" : ""} will be imported`
+                    ? `Step 1 of 2 — creates products & variants for ${importCount} row${importCount !== 1 ? "s" : ""}. No stock yet.`
                     : "Resolve all errors before importing"}
                 </p>
-                <Button onClick={handleCommit} disabled={!canImport} className="gap-2">
-                  <Upload className="size-4" />
-                  Import {canImport ? importCount : ""} rows
+                <Button onClick={handleCreateCatalog} disabled={!canImport} className="gap-2">
+                  <Package className="size-4" />
+                  Create catalog
                   <ArrowRight className="size-4" />
                 </Button>
               </div>
             </div>
           )}
 
-          {/* ── COMMITTING ── */}
-          {importState === "committing" && (
+          {/* ── STEP 1 RUNNING: creating catalog ── */}
+          {importState === "creating-catalog" && (
             <div className="flex flex-col items-center justify-center py-28 gap-5">
               <div className="size-12 animate-spin rounded-full border-4 border-primary border-t-transparent" />
               <div className="text-center">
-                <p className="font-semibold text-lg">Importing…</p>
+                <p className="font-semibold text-lg">Creating catalog…</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Creating products, variants, and receiving stock. Do not close this page.
+                  Creating products & variants. No stock is being received yet. Do not close this page.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* ── CATALOG READY: confirm before receiving stock ── */}
+          {importState === "catalog-ready" && catalogResult && (
+            <div className="space-y-6">
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-6">
+                <div className="flex items-start gap-4">
+                  <CheckCircle2 className="size-8 shrink-0 text-emerald-600 mt-0.5" />
+                  <div>
+                    <p className="text-lg font-semibold text-emerald-900">Catalog created — step 1 of 2 done</p>
+                    <p className="mt-1 text-sm text-emerald-700">
+                      All products & variants now exist. Nothing has been added to stock yet — review below,
+                      then confirm to receive stock.
+                    </p>
+                    <p className="mt-1 text-xs text-emerald-600 font-mono">
+                      Batch ID: {catalogResult.batchId}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <StatCard label="New products" value={catalogResult.newProductsCreated} />
+                <StatCard label="New variants" value={catalogResult.newVariantsCreated} />
+                <StatCard
+                  label="New categories / colors / sizes"
+                  value={`${catalogResult.newCategoriesCreated} / ${catalogResult.newColorsCreated} / ${catalogResult.newSizesCreated}`}
+                />
+                <StatCard label="Rows ready to stock" value={catalogResult.rowsImported} />
+              </div>
+
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-5">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="size-5 shrink-0 text-amber-600 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-amber-900">
+                      Step 2 — receive stock for {catalogResult.rowsImported} row
+                      {catalogResult.rowsImported !== 1 ? "s" : ""}?
+                    </p>
+                    <p className="mt-1 text-sm text-amber-700">
+                      This creates purchase orders and adds inventory. Only do this once you've confirmed the
+                      catalog above is correct.
+                    </p>
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      <Button onClick={handleReceiveStock} className="gap-2">
+                        <Upload className="size-4" />
+                        Receive stock now
+                        <ArrowRight className="size-4" />
+                      </Button>
+                      <Button variant="outline" onClick={() => navigate("/dashboard/catalog")}>
+                        Review catalog first
+                      </Button>
+                      <Button variant="ghost" onClick={handleReset}>
+                        Not now
+                      </Button>
+                    </div>
+                    <p className="mt-3 text-xs text-amber-600">
+                      You can also receive this stock later from the History tab.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── STEP 2 RUNNING: receiving stock ── */}
+          {importState === "receiving-stock" && (
+            <div className="flex flex-col items-center justify-center py-28 gap-5">
+              <div className="size-12 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+              <div className="text-center">
+                <p className="font-semibold text-lg">Receiving stock…</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Creating purchase orders and adding inventory. Do not close this page.
                 </p>
               </div>
             </div>
@@ -632,10 +755,11 @@ export function BulkImportPage() {
                 <div className="flex items-start gap-4">
                   <CheckCircle2 className="size-8 shrink-0 text-emerald-600 mt-0.5" />
                   <div>
-                    <p className="text-lg font-semibold text-emerald-900">Import successful!</p>
+                    <p className="text-lg font-semibold text-emerald-900">Import complete — stock received!</p>
                     <p className="mt-1 text-sm text-emerald-700">
-                      {importResult.rowsImported} row{importResult.rowsImported !== 1 ? "s" : ""} received
-                      into stock across {importResult.purchaseOrderIds.length} purchase
+                      {importResult.unitsReceived} unit{importResult.unitsReceived !== 1 ? "s" : ""} across{" "}
+                      {importResult.rowsImported} row{importResult.rowsImported !== 1 ? "s" : ""} received into
+                      stock via {importResult.purchaseOrderIds.length} purchase
                       order{importResult.purchaseOrderIds.length !== 1 ? "s" : ""}.
                     </p>
                     <p className="mt-1 text-xs text-emerald-600 font-mono">
@@ -646,12 +770,12 @@ export function BulkImportPage() {
               </div>
 
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <StatCard label="Rows received" value={importResult.rowsImported} />
-                <StatCard label="New products" value={importResult.newProductsCreated} />
-                <StatCard label="New variants" value={importResult.newVariantsCreated} />
+                <StatCard label="Units received" value={importResult.unitsReceived} />
+                <StatCard label="New products" value={catalogResult?.newProductsCreated ?? 0} />
+                <StatCard label="New variants" value={catalogResult?.newVariantsCreated ?? 0} />
                 <StatCard
                   label="New categories / colors / sizes"
-                  value={`${importResult.newCategoriesCreated} / ${importResult.newColorsCreated} / ${importResult.newSizesCreated}`}
+                  value={`${catalogResult?.newCategoriesCreated ?? 0} / ${catalogResult?.newColorsCreated ?? 0} / ${catalogResult?.newSizesCreated ?? 0}`}
                 />
               </div>
 
@@ -738,6 +862,11 @@ export function BulkImportPage() {
                           <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700">
                             <CheckCircle2 className="size-3" />
                             Active
+                          </span>
+                        ) : b.status === "AWAITING_STOCK" ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">
+                            <Clock className="size-3" />
+                            Catalog only — no stock
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
