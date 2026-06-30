@@ -804,3 +804,26 @@ model Expense {
   @@index([category])
   @@map("expenses")
 }
+
+// ---------------------------------------------------------------------------
+// Owner capital & drawings (money the owner puts in / takes out — not P&L)
+// ---------------------------------------------------------------------------
+
+enum CapitalEntryType {
+  INVESTMENT
+  DRAWING
+}
+
+model CapitalEntry {
+  id        String           @id @default(cuid())
+  type      CapitalEntryType
+  amount    Decimal          @db.Decimal(14, 2)
+  date      DateTime         @db.Date
+  note      String?
+  createdAt DateTime         @default(now()) @map("created_at")
+  updatedAt DateTime         @updatedAt @map("updated_at")
+
+  @@index([date(sort: Desc)])
+  @@index([type])
+  @@map("capital_entries")
+}

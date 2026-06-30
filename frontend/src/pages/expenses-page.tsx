@@ -41,6 +41,7 @@ import {
   apiPostJsonAuthed,
   getStoredAccessToken,
 } from "@/lib/api-client";
+import { BusinessPosition } from "@/components/expenses/business-position";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -768,6 +769,9 @@ export function ExpensesPage() {
           </div>
         ) : null}
       </Card>
+
+      {/* Business position — cash in hand (all-time, independent of the date filter above) */}
+      <BusinessPosition />
     </div>
   );
 }
