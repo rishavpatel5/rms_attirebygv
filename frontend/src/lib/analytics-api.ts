@@ -370,6 +370,7 @@ export type PurchaseAnalysisStatus =
 export type PurchaseAnalysisRow = {
   variantId: string;
   sku: string;
+  brand: string | null;
   productName: string;
   productKind: string;
   colorName: string | null;

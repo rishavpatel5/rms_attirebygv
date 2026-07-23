@@ -13,35 +13,30 @@ export function PosLineDiscount({ line }: Props) {
 
   if (line.isGiveaway) return null;
 
+  // Default to flat (₹); percent only when explicitly selected.
   const mode: "percent" | "flat" =
-    line.itemDiscountType === "FLAT_AMOUNT" ? "flat" : "percent";
+    line.itemDiscountType === "PERCENT" ? "percent" : "flat";
+
+  const activeType: RetailDiscountType = mode === "percent" ? "PERCENT" : "FLAT_AMOUNT";
+  const presets = mode === "percent" ? [5, 10] : [49, 99, 199, 299];
 
   return (
     <div className="mt-2 flex flex-wrap items-center gap-1.5">
-      <button
-        type="button"
-        className={cn(
-          "rounded-full border px-2 py-0.5 text-[10px] font-medium",
-          line.itemDiscountType === "PERCENT" && line.itemDiscountValue === 5
-            ? "border-foreground bg-foreground text-background"
-            : "border-border/80 text-muted-foreground hover:bg-muted/60",
-        )}
-        onClick={() => setLineItemDiscount(line.id, "PERCENT", 5)}
-      >
-        5%
-      </button>
-      <button
-        type="button"
-        className={cn(
-          "rounded-full border px-2 py-0.5 text-[10px] font-medium",
-          line.itemDiscountType === "PERCENT" && line.itemDiscountValue === 10
-            ? "border-foreground bg-foreground text-background"
-            : "border-border/80 text-muted-foreground hover:bg-muted/60",
-        )}
-        onClick={() => setLineItemDiscount(line.id, "PERCENT", 10)}
-      >
-        10%
-      </button>
+      {presets.map((p) => (
+        <button
+          key={p}
+          type="button"
+          className={cn(
+            "rounded-full border px-2 py-0.5 text-[10px] font-medium",
+            line.itemDiscountType === activeType && line.itemDiscountValue === p
+              ? "border-foreground bg-foreground text-background"
+              : "border-border/80 text-muted-foreground hover:bg-muted/60",
+          )}
+          onClick={() => setLineItemDiscount(line.id, activeType, p)}
+        >
+          {mode === "percent" ? `${p}%` : `₹${p}`}
+        </button>
+      ))}
       <div className="flex items-center gap-1 rounded-lg border border-border/70 px-1">
         <select
           className="h-7 max-w-[4.5rem] border-0 bg-transparent text-[10px] outline-none"
@@ -52,8 +47,8 @@ export function PosLineDiscount({ line }: Props) {
             setLineItemDiscount(line.id, type, line.itemDiscountValue ?? 0);
           }}
         >
-          <option value="percent">%</option>
           <option value="flat">₹</option>
+          <option value="percent">%</option>
         </select>
         <Input
           type="number"

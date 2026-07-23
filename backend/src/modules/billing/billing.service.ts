@@ -603,6 +603,7 @@ export async function listOrdersReport(input: OrdersReportQuery) {
         { invoiceNumber: { contains: term, mode: "insensitive" } },
         { customer: { fullName: { contains: term, mode: "insensitive" } } },
         { customer: { phone: { contains: term, mode: "insensitive" } } },
+        { items: { some: { variant: { sku: { contains: term, mode: "insensitive" } } } } },
       ],
     });
   }

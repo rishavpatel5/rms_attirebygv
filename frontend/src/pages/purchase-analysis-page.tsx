@@ -254,6 +254,7 @@ export function PurchaseAnalysisPage() {
                 <TableRow>
                   <TableHead>Status</TableHead>
                   <TableHead>SKU</TableHead>
+                  <TableHead>Brand</TableHead>
                   <TableHead>Product</TableHead>
                   <TableHead>Variant</TableHead>
                   <TableHead className="text-right">Stock</TableHead>
@@ -271,6 +272,7 @@ export function PurchaseAnalysisPage() {
                       <StatusBadge status={row.status} />
                     </TableCell>
                     <TableCell className="font-mono text-xs">{row.sku}</TableCell>
+                    <TableCell className="text-muted-foreground">{row.brand ?? "—"}</TableCell>
                     <TableCell>{row.productName}</TableCell>
                     <TableCell className="text-muted-foreground">{row.variantLabel}</TableCell>
                     <TableCell className="text-right tabular-nums font-medium">{row.currentStock}</TableCell>

@@ -676,21 +676,20 @@ export async function commitStock(
       },
     });
 
-    const poItems: { id: string; variantId: string; quantity: number }[] = [];
-
-    for (let i = 0; i < lines.length; i++) {
-      const l = lines[i]!;
-      const c = computed[i]!;
-      const unitEx = l.quantity > 0
-        ? c.taxableValue.div(l.quantity).toDecimalPlaces(6, Prisma.Decimal.ROUND_HALF_UP)
-        : new Prisma.Decimal(0);
-
-      const item = await prisma.purchaseOrderItem.create({
-        data: {
+    // Bulk-create PO items in one round trip (received immediately, so no follow-up update).
+    // Sequential per-line writes over Supabase's cloud latency were the cause of the
+    // request outliving Railway's edge timeout ("Failed to fetch" while stock kept trickling in).
+    await prisma.purchaseOrderItem.createMany({
+      data: lines.map((l, i) => {
+        const c = computed[i]!;
+        const unitEx = l.quantity > 0
+          ? c.taxableValue.div(l.quantity).toDecimalPlaces(6, Prisma.Decimal.ROUND_HALF_UP)
+          : new Prisma.Decimal(0);
+        return {
           purchaseOrderId: po.id,
           variantId: l.variantId,
           quantityOrdered: l.quantity,
-          quantityReceived: 0,
+          quantityReceived: l.quantity,
           unitCost: new Prisma.Decimal(l.unitCost),
           gstEnabled: true,
           gstPricingMode: l.gstInclusive ? GstPricingMode.INCLUSIVE : GstPricingMode.EXCLUSIVE,
@@ -703,49 +702,62 @@ export async function commitStock(
           igstAmount: c.igstAmount,
           lineTotal: c.lineTotal,
           unitCostExclusive: unitEx,
-        },
-      });
-      poItems.push({ id: item.id, variantId: item.variantId, quantity: item.quantityOrdered });
-    }
+        };
+      }),
+    });
 
-    // Process movements in variantId order (avoids row-level lock ordering issues if ever re-added to a tx)
-    const sorted = [...poItems].sort((a, b) => a.variantId.localeCompare(b.variantId));
-    for (const it of sorted) {
-      // Ensure balance row exists (upsert is safe outside tx — single atomic SQL UPSERT)
-      await prisma.inventoryBalance.upsert({
-        where: { variantId: it.variantId },
-        create: { variantId: it.variantId, quantity: 0 },
-        update: {},
-      });
-      // Apply delta (single atomic SQL UPDATE)
-      await prisma.inventoryBalance.updateMany({
-        where: { variantId: it.variantId },
-        data: { quantity: { increment: it.quantity } },
-      });
-      // Record movement log
-      await prisma.inventoryLog.create({
-        data: {
-          variantId: it.variantId,
-          quantityDelta: it.quantity,
-          movementType: "PURCHASE_IN",
-          referenceKind: "PURCHASE_ORDER",
-          referenceId: po.id,
-          createdById: actorId,
-          metadata: { purchaseOrderItemId: it.id },
-        },
-      });
-      await prisma.purchaseOrderItem.update({
-        where: { id: it.id },
-        data: { quantityReceived: it.quantity },
-      });
-      unitsReceived += it.quantity;
+    // Read the created items back to reference them from inventory logs.
+    const createdItems = await prisma.purchaseOrderItem.findMany({
+      where: { purchaseOrderId: po.id },
+      select: { id: true, variantId: true, quantityOrdered: true },
+    });
+
+    // Ensure a balance row exists for every variant (one round trip; existing rows skipped).
+    await prisma.inventoryBalance.createMany({
+      data: [...new Set(createdItems.map((it) => it.variantId))].map((variantId) => ({
+        variantId,
+        quantity: 0,
+      })),
+      skipDuplicates: true,
+    });
+
+    // Sum inbound deltas per variant, then apply every increment in a single bulk UPDATE.
+    const deltaByVariant = new Map<string, number>();
+    for (const it of createdItems) {
+      deltaByVariant.set(
+        it.variantId,
+        (deltaByVariant.get(it.variantId) ?? 0) + it.quantityOrdered,
+      );
     }
+    const deltaTuples = [...deltaByVariant].map(
+      ([variantId, delta]) => Prisma.sql`(${variantId}::text, ${delta}::integer)`,
+    );
+    await prisma.$executeRaw`
+      UPDATE inventory_balances AS ib
+      SET quantity = ib.quantity + v.delta
+      FROM (VALUES ${Prisma.join(deltaTuples)}) AS v(variant_id, delta)
+      WHERE ib.variant_id = v.variant_id
+    `;
+
+    // One PURCHASE_IN log per received line, in one round trip.
+    await prisma.inventoryLog.createMany({
+      data: createdItems.map((it) => ({
+        variantId: it.variantId,
+        quantityDelta: it.quantityOrdered,
+        movementType: "PURCHASE_IN" as const,
+        referenceKind: "PURCHASE_ORDER" as const,
+        referenceId: po.id,
+        createdById: actorId,
+        metadata: { purchaseOrderItemId: it.id },
+      })),
+    });
 
     await prisma.purchaseOrder.update({
       where: { id: po.id },
       data: { status: "RECEIVED", receivedAt: new Date() },
     });
 
+    for (const it of createdItems) unitsReceived += it.quantityOrdered;
     poIds.push(po.id);
   }
 

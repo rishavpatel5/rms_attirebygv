@@ -12,6 +12,7 @@ export type PurchaseAnalysisStatus =
 export type PurchaseAnalysisRow = {
   variantId: string;
   sku: string;
+  brand: string | null;
   productName: string;
   productKind: string;
   colorName: string | null;
@@ -158,6 +159,7 @@ export async function getPurchaseAnalysis(input: PurchaseAnalysisQuery) {
     {
       variant_id: string;
       sku: string;
+      brand: string | null;
       product_name: string;
       product_kind: string;
       color_name: string | null;
@@ -182,6 +184,7 @@ export async function getPurchaseAnalysis(input: PurchaseAnalysisQuery) {
     SELECT
       pv.id AS variant_id,
       pv.sku,
+      p.brand,
       p.name AS product_name,
       p.kind::text AS product_kind,
       c.name AS color_name,
@@ -210,6 +213,7 @@ export async function getPurchaseAnalysis(input: PurchaseAnalysisQuery) {
     return {
       variantId: r.variant_id,
       sku: r.sku,
+      brand: r.brand,
       productName: r.product_name,
       productKind: r.product_kind,
       colorName: r.color_name,

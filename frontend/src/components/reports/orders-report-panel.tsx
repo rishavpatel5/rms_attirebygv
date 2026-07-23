@@ -106,6 +106,12 @@ export function OrdersReportPanel({ from, to }: Props) {
     setPage(1);
   }, [from, to, appliedSearch]);
 
+  // Dynamic search: debounce the raw input into the applied term that drives the query.
+  useEffect(() => {
+    const t = setTimeout(() => setAppliedSearch(search.trim()), 350);
+    return () => clearTimeout(t);
+  }, [search]);
+
   useEffect(() => {
     void load();
   }, [load]);
@@ -139,10 +145,10 @@ export function OrdersReportPanel({ from, to }: Props) {
         <CardContent className="space-y-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="ord-search">Search invoice / customer</Label>
+              <Label htmlFor="ord-search">Search invoice / customer / SKU</Label>
               <Input
                 id="ord-search"
-                placeholder="INV-… or name or phone"
+                placeholder="INV-… name, phone or SKU"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-[220px]"
