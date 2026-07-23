@@ -96,6 +96,7 @@ export function serializeOrderForReport(row: OrderReportRow) {
       return {
         id: it.id,
         variantId: it.variantId,
+        productId: p.id,
         sku: it.variant.sku,
         productName: p.name,
         productKind: p.kind,

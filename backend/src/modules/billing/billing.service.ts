@@ -323,6 +323,145 @@ export async function voidSaleOrder(input: {
   });
 }
 
+/**
+ * Correct a confirmed sale line's variant (e.g. wrong colour/size recorded) WITHOUT
+ * touching any money. Only same-product swaps are allowed, and every monetary field on
+ * the line is preserved byte-for-byte — so totals, GST, payments and the invoice are
+ * unchanged. Inventory is reconciled: the mis-sold unit is returned to the old variant and
+ * one is consumed from the corrected variant (blocked if it has no stock, all-or-nothing).
+ */
+export async function correctOrderItemVariant(input: {
+  orderId: string;
+  itemId: string;
+  newVariantId: string;
+  correctedById: string | null;
+}): Promise<{ orderId: string; itemId: string; variantId: string }> {
+  const { orderId, itemId, newVariantId, correctedById } = input;
+
+  return runInTransaction(async (tx) => {
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+      select: { id: true, documentType: true, status: true },
+    });
+    if (!order) throw new AppError(404, "ORDER_NOT_FOUND", "Order not found");
+    if (order.documentType !== OrderDocumentType.SALE) {
+      throw new AppError(400, "INVALID_DOCUMENT", "Only sale invoices can be corrected");
+    }
+    if (order.status !== OrderStatus.CONFIRMED) {
+      throw new AppError(409, "ORDER_NOT_EDITABLE", "Only confirmed sales can be corrected", {
+        status: order.status,
+      });
+    }
+
+    // Same conflict guards as void: a corrected line would desync linked documents.
+    const [creditNoteCount, exchangeCount, salesReturnCount] = await Promise.all([
+      tx.order.count({ where: { originalSaleId: orderId } }),
+      tx.exchange.count({
+        where: {
+          OR: [{ originalOrderId: orderId }, { newOrderId: orderId }],
+          status: { not: ExchangeStatus.CANCELLED },
+        },
+      }),
+      tx.salesReturn.count({
+        where: {
+          orderId,
+          status: { notIn: [SalesReturnStatus.CANCELLED, SalesReturnStatus.REJECTED] },
+        },
+      }),
+    ]);
+    if (creditNoteCount > 0) {
+      throw new AppError(409, "ORDER_HAS_CREDIT_NOTES", "Cannot correct a sale that has credit notes");
+    }
+    if (exchangeCount > 0) {
+      throw new AppError(409, "ORDER_HAS_EXCHANGES", "Cannot correct a sale linked to an exchange");
+    }
+    if (salesReturnCount > 0) {
+      throw new AppError(409, "ORDER_HAS_RETURNS", "Cannot correct a sale that has returns");
+    }
+
+    const item = await tx.orderItem.findUnique({
+      where: { id: itemId },
+      select: {
+        id: true,
+        orderId: true,
+        variantId: true,
+        quantity: true,
+        isGiveaway: true,
+        variant: { select: { productId: true } },
+      },
+    });
+    if (!item || item.orderId !== orderId) {
+      throw new AppError(404, "ORDER_ITEM_NOT_FOUND", "Line item not found on this order");
+    }
+    if (item.variantId === newVariantId) {
+      throw new AppError(400, "SAME_VARIANT", "Choose a different variant to correct to");
+    }
+
+    const newVariant = await tx.productVariant.findUnique({
+      where: { id: newVariantId },
+      select: { id: true, isActive: true, productId: true },
+    });
+    if (!newVariant || !newVariant.isActive) {
+      throw new AppError(404, "VARIANT_NOT_FOUND", "Target variant not found or inactive");
+    }
+    if (newVariant.productId !== item.variant.productId) {
+      throw new AppError(
+        400,
+        "DIFFERENT_PRODUCT",
+        "Can only correct to another variant of the same product",
+      );
+    }
+
+    // Reconcile stock. The outbound movement throws INSUFFICIENT_STOCK (and rolls the whole
+    // transaction back) when the corrected variant cannot cover the quantity — the "block on
+    // no stock" guarantee. Both logs carry correction metadata as the audit trail.
+    const auditMeta = {
+      correction: true,
+      orderItemId: itemId,
+      fromVariantId: item.variantId,
+      toVariantId: newVariantId,
+    };
+    await applyInventoryMovement(tx, {
+      variantId: item.variantId,
+      quantityDelta: item.quantity,
+      movementType: "SALE_REVERSAL_IN",
+      referenceKind: InventoryReferenceKind.ORDER,
+      referenceId: orderId,
+      createdById: correctedById,
+      note: "Variant correction — returned mis-sold unit",
+      metadata: auditMeta,
+    });
+    await applyInventoryMovement(tx, {
+      variantId: newVariantId,
+      quantityDelta: -item.quantity,
+      movementType: "SALE_OUT",
+      referenceKind: InventoryReferenceKind.ORDER,
+      referenceId: orderId,
+      createdById: correctedById,
+      note: "Variant correction — consumed corrected unit",
+      metadata: auditMeta,
+    });
+
+    // Normal lines derive COGS per-variant at report time, so profit refreshes automatically
+    // once variantId changes. Only giveaway lines store a cost snapshot — refresh it.
+    let unitCostSnapshot: Prisma.Decimal | undefined;
+    if (item.isGiveaway) {
+      const costMap = await resolveVariantUnitCosts(tx, [newVariantId]);
+      unitCostSnapshot = costMap.get(newVariantId) ?? new Prisma.Decimal(0);
+    }
+
+    await tx.orderItem.update({
+      where: { id: itemId },
+      data: {
+        variantId: newVariantId,
+        ...(unitCostSnapshot !== undefined ? { unitCostSnapshot } : {}),
+      },
+    });
+
+    return { orderId, itemId, variantId: newVariantId };
+  });
+}
+
 export async function checkoutPos(input: {
   body: PosCheckoutBody;
   createdById: string | null;

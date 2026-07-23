@@ -1,5 +1,6 @@
-import { ChevronDown, ChevronRight, FileText, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, FileText, Pencil, Trash2 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { ColorLabel } from "@/components/catalog/color-dot";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,7 +25,12 @@ import {
 } from "@/components/ui/table";
 import { OrderInvoiceSheet } from "@/components/customers/order-invoice-sheet";
 import { ShareInvoiceWhatsAppButton } from "@/components/customers/share-invoice-whatsapp-button";
-import { voidSaleOrder } from "@/lib/billing-api";
+import {
+  correctOrderItemVariant,
+  fetchProductVariantsForCorrection,
+  voidSaleOrder,
+  type CorrectableVariant,
+} from "@/lib/billing-api";
 import { formatIstDateTime } from "@/lib/ist-time";
 import { cn } from "@/lib/utils";
 import {
@@ -79,6 +85,15 @@ export function OrdersReportPanel({ from, to }: Props) {
   const [deleteTarget, setDeleteTarget] = useState<OrderReportRow | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteErr, setDeleteErr] = useState<string | null>(null);
+  const [correctTarget, setCorrectTarget] = useState<{
+    orderId: string;
+    line: OrderReportLine;
+  } | null>(null);
+  const [correctVariants, setCorrectVariants] = useState<CorrectableVariant[]>([]);
+  const [correctChoice, setCorrectChoice] = useState("");
+  const [correctVariantsLoading, setCorrectVariantsLoading] = useState(false);
+  const [correctBusy, setCorrectBusy] = useState(false);
+  const [correctErr, setCorrectErr] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -129,6 +144,38 @@ export function OrdersReportPanel({ from, to }: Props) {
       setDeleteErr(e instanceof Error ? e.message : "Failed to delete sale");
     } finally {
       setDeleteBusy(false);
+    }
+  };
+
+  const openCorrect = useCallback(async (orderId: string, line: OrderReportLine) => {
+    setCorrectTarget({ orderId, line });
+    setCorrectChoice("");
+    setCorrectErr(null);
+    setCorrectVariants([]);
+    setCorrectVariantsLoading(true);
+    try {
+      const variants = await fetchProductVariantsForCorrection(line.productId);
+      setCorrectVariants(variants.filter((v) => v.id !== line.variantId));
+    } catch (e: unknown) {
+      setCorrectErr(e instanceof Error ? e.message : "Failed to load variants");
+    } finally {
+      setCorrectVariantsLoading(false);
+    }
+  }, []);
+
+  const handleConfirmCorrect = async () => {
+    if (!correctTarget || !correctChoice) return;
+    setCorrectBusy(true);
+    setCorrectErr(null);
+    try {
+      await correctOrderItemVariant(correctTarget.orderId, correctTarget.line.id, correctChoice);
+      setCorrectTarget(null);
+      toast.success("Variant corrected — stock reconciled");
+      await load();
+    } catch (e: unknown) {
+      setCorrectErr(e instanceof Error ? e.message : "Failed to correct variant");
+    } finally {
+      setCorrectBusy(false);
     }
   };
 
@@ -324,7 +371,12 @@ export function OrdersReportPanel({ from, to }: Props) {
                       {open ? (
                         <TableRow className="bg-muted/15 hover:bg-muted/15">
                           <TableCell colSpan={13} className="p-0">
-                            <OrderLinesDetail lines={row.lines} gstEnabled={row.gstEnabled} />
+                            <OrderLinesDetail
+                              lines={row.lines}
+                              gstEnabled={row.gstEnabled}
+                              canCorrect={row.status === "CONFIRMED" && row.documentType === "SALE"}
+                              onCorrect={(line) => openCorrect(row.id, line)}
+                            />
                           </TableCell>
                         </TableRow>
                       ) : null}
@@ -426,6 +478,91 @@ export function OrdersReportPanel({ from, to }: Props) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog
+        open={correctTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !correctBusy) {
+            setCorrectTarget(null);
+            setCorrectErr(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Correct variant</DialogTitle>
+            <DialogDescription>
+              {correctTarget ? (
+                <>
+                  Fixes a wrongly-recorded colour / size on{" "}
+                  <span className="font-medium text-foreground">
+                    {correctTarget.line.productName}
+                  </span>{" "}
+                  (currently{" "}
+                  <span className="font-medium text-foreground">
+                    {correctTarget.line.variantLabel}
+                  </span>
+                  ). Money on the bill is unchanged — only stock moves between the two variants.
+                </>
+              ) : null}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="correct-variant">Correct to</Label>
+            {correctVariantsLoading ? (
+              <p className="text-sm text-muted-foreground">Loading variants…</p>
+            ) : correctVariants.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No other variants of this product to switch to.
+              </p>
+            ) : (
+              <select
+                id="correct-variant"
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                value={correctChoice}
+                onChange={(e) => setCorrectChoice(e.target.value)}
+              >
+                <option value="">Select a variant…</option>
+                {correctVariants.map((v) => {
+                  const label = [v.colorName, v.sizeLabel].filter(Boolean).join(" / ") || "Default";
+                  return (
+                    <option key={v.id} value={v.id} disabled={v.quantity <= 0}>
+                      {label} · {v.sku} · stock {v.quantity}
+                      {v.quantity <= 0 ? " (no stock)" : ""}
+                    </option>
+                  );
+                })}
+              </select>
+            )}
+            <p className="text-[11px] text-muted-foreground">
+              Variants with no stock can’t be selected — add a stock adjustment first, then correct.
+            </p>
+          </div>
+
+          {correctErr ? <p className="text-sm text-destructive">{correctErr}</p> : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={correctBusy}
+              onClick={() => {
+                setCorrectTarget(null);
+                setCorrectErr(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={correctBusy || !correctChoice}
+              onClick={() => void handleConfirmCorrect()}
+            >
+              {correctBusy ? "Correcting…" : "Correct variant"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -433,9 +570,13 @@ export function OrdersReportPanel({ from, to }: Props) {
 function OrderLinesDetail({
   lines,
   gstEnabled,
+  canCorrect,
+  onCorrect,
 }: {
   lines: OrderReportLine[];
   gstEnabled: boolean;
+  canCorrect: boolean;
+  onCorrect: (line: OrderReportLine) => void;
 }) {
   return (
     <div className="border-t border-border/50 p-4">
@@ -454,6 +595,7 @@ function OrderLinesDetail({
             <TableHead className="text-right">Taxable</TableHead>
             {gstEnabled ? <TableHead className="text-right">GST</TableHead> : null}
             <TableHead className="text-right">Line total</TableHead>
+            {canCorrect ? <TableHead className="w-10" /> : null}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -506,6 +648,20 @@ function OrderLinesDetail({
               <TableCell className="text-right font-medium tabular-nums">
                 {fmtInr(ln.lineTotal)}
               </TableCell>
+              {canCorrect ? (
+                <TableCell className="text-right">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 gap-1 px-2 text-xs text-muted-foreground"
+                    title="Correct variant (colour / size)"
+                    onClick={() => onCorrect(ln)}
+                  >
+                    <Pencil className="size-3.5" />
+                  </Button>
+                </TableCell>
+              ) : null}
             </TableRow>
           ))}
         </TableBody>

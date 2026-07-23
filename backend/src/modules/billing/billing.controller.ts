@@ -4,6 +4,7 @@ import * as billingService from "./billing.service.js";
 import * as invoiceService from "./invoice/invoice.service.js";
 import {
   confirmOrderBodySchema,
+  correctItemVariantBodySchema,
   createCreditNoteBodySchema,
   createDraftOrderBodySchema,
   exchangeBodySchema,
@@ -110,6 +111,17 @@ export const billingController = {
       createdById: getAuthUserId(req),
     });
     res.status(201).json({ data: out });
+  },
+
+  async correctItemVariant(req: Request, res: Response): Promise<void> {
+    const body = parseBody(correctItemVariantBodySchema, req.body);
+    const out = await billingService.correctOrderItemVariant({
+      orderId: req.params.orderId!,
+      itemId: req.params.itemId!,
+      newVariantId: body.variantId,
+      correctedById: getAuthUserId(req),
+    });
+    res.json({ data: out });
   },
 
   async voidSale(req: Request, res: Response): Promise<void> {

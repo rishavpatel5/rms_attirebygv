@@ -4,11 +4,13 @@ import { requireRoles } from "../../modules/auth/middleware/authorize-roles.midd
 import { ROLES_POS_WRITE, ROLES_READ_ALL } from "../../modules/auth/role-groups.js";
 import { asyncHandler } from "../../utils/async-handler.js";
 import { billingController } from "../../modules/billing/billing.controller.js";
+import { UserRole } from "@prisma/client";
 
 export const billingRouter = Router();
 
 const read = [authenticate, requireRoles(...ROLES_READ_ALL)];
 const write = [authenticate, requireRoles(...ROLES_POS_WRITE)];
+const adminOnly = [authenticate, requireRoles(UserRole.ADMIN)];
 
 billingRouter.get(
   "/pos/search",
@@ -62,6 +64,12 @@ billingRouter.post(
   "/exchanges",
   ...write,
   asyncHandler((req, res) => billingController.createExchange(req, res)),
+);
+
+billingRouter.patch(
+  "/orders/:orderId/items/:itemId/variant",
+  ...adminOnly,
+  asyncHandler((req, res) => billingController.correctItemVariant(req, res)),
 );
 
 billingRouter.delete(

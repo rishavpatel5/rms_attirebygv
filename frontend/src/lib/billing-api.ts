@@ -1,4 +1,9 @@
-import { apiDeleteAuthed, getStoredAccessToken } from "./api-client";
+import {
+  apiDeleteAuthed,
+  apiGetJsonAuthed,
+  apiPatchJsonAuthed,
+  getStoredAccessToken,
+} from "./api-client";
 
 function joinUrl(base: string, path: string): string {
   if (!base) return path;
@@ -56,6 +61,58 @@ export async function fetchOrderInvoicePdf(
 /** Void a confirmed sale — restores stock and removes it from revenue reports. */
 export async function voidSaleOrder(orderId: string): Promise<void> {
   await apiDeleteAuthed(`/api/v1/billing/orders/${encodeURIComponent(orderId)}`);
+}
+
+export type CorrectableVariant = {
+  id: string;
+  sku: string;
+  isActive: boolean;
+  colorName: string | null;
+  sizeLabel: string | null;
+  quantity: number;
+};
+
+type RawCatalogVariant = {
+  id: string;
+  sku: string;
+  isActive: boolean;
+  color: { name: string } | null;
+  size: { label: string } | null;
+  inventory: { quantity: number } | null;
+};
+
+/** Active variants of a product — used to pick a corrected variant for a sold line. */
+export async function fetchProductVariantsForCorrection(
+  productId: string,
+): Promise<CorrectableVariant[]> {
+  const rows = await apiGetJsonAuthed<RawCatalogVariant[]>(
+    `/api/v1/catalog/products/${encodeURIComponent(productId)}/variants?limit=200`,
+  );
+  return rows
+    .filter((v) => v.isActive)
+    .map((v) => ({
+      id: v.id,
+      sku: v.sku,
+      isActive: v.isActive,
+      colorName: v.color?.name ?? null,
+      sizeLabel: v.size?.label ?? null,
+      quantity: v.inventory?.quantity ?? 0,
+    }));
+}
+
+/**
+ * Correct a confirmed sale line's variant (wrong colour/size). Money is untouched;
+ * stock is reconciled. Blocked server-side unless the caller is an ADMIN.
+ */
+export async function correctOrderItemVariant(
+  orderId: string,
+  itemId: string,
+  variantId: string,
+): Promise<void> {
+  await apiPatchJsonAuthed(
+    `/api/v1/billing/orders/${encodeURIComponent(orderId)}/items/${encodeURIComponent(itemId)}/variant`,
+    { variantId },
+  );
 }
 
 export function triggerPdfDownload(blob: Blob, filename: string): void {

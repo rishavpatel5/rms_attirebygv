@@ -269,6 +269,7 @@ export type OrderReportPayment = {
 export type OrderReportLine = {
   id: string;
   variantId: string;
+  productId: string;
   sku: string;
   productName: string;
   productKind: string;

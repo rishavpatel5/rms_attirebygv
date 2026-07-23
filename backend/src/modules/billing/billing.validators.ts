@@ -24,6 +24,10 @@ const paymentNatureSchema = z.nativeEnum(PaymentNature);
 
 const retailDiscountTypeSchema = z.nativeEnum(RetailDiscountType);
 
+export const correctItemVariantBodySchema = z.object({
+  variantId: z.string().cuid(),
+});
+
 export const cartDiscountSchema = z
   .object({
     type: retailDiscountTypeSchema,
