@@ -35,6 +35,17 @@ const envSchema = z
       .optional()
       .transform((v) => v === "true"),
     BCRYPT_COST: z.coerce.number().int().min(10).max(14).default(12),
+    // WhatsApp (WATI) invoice delivery. Disabled by default; when enabled the fields
+    // below become required (checked in superRefine) so a misconfig fails at boot.
+    WHATSAPP_ENABLED: z
+      .enum(["true", "false"])
+      .optional()
+      .transform((v) => v === "true"),
+    WATI_BASE_URL: z.string().optional().default(""),
+    WATI_ACCESS_TOKEN: z.string().optional().default(""),
+    WATI_INVOICE_TEMPLATE_NAME: z.string().optional().default("invoice_notification"),
+    WATI_BROADCAST_NAME: z.string().optional().default("invoice_notification"),
+    PUBLIC_API_BASE_URL: z.string().optional().default(""),
   })
   .superRefine((data, ctx) => {
     const minSecretLen = data.NODE_ENV === "production" ? 32 : 16;
@@ -58,6 +69,23 @@ const envSchema = z
         message: "AUTH_BOOTSTRAP_ENABLED must not be true in production",
         path: ["AUTH_BOOTSTRAP_ENABLED"],
       });
+    }
+    if (data.WHATSAPP_ENABLED) {
+      const required: [keyof typeof data, string][] = [
+        ["WATI_BASE_URL", "WATI_BASE_URL"],
+        ["WATI_ACCESS_TOKEN", "WATI_ACCESS_TOKEN"],
+        ["WATI_INVOICE_TEMPLATE_NAME", "WATI_INVOICE_TEMPLATE_NAME"],
+        ["PUBLIC_API_BASE_URL", "PUBLIC_API_BASE_URL"],
+      ];
+      for (const [key, label] of required) {
+        if (!String(data[key] ?? "").trim()) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `${label} is required when WHATSAPP_ENABLED=true`,
+            path: [key as string],
+          });
+        }
+      }
     }
   });
 

@@ -46,7 +46,18 @@ import {
   useBillingStore,
 } from "@/stores/billing-store";
 import { useUiStore } from "@/stores/ui-store";
-import { buildInvoiceWhatsAppHref } from "@/lib/whatsapp-invoice";
+import { buildInvoiceWhatsAppHref, normalizeWhatsAppPhone } from "@/lib/whatsapp-invoice";
+import { sendInvoiceWhatsApp } from "@/lib/billing-api";
+import { OrderInvoiceSheet } from "@/components/customers/order-invoice-sheet";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { toast } from "sonner";
 
 const money = (n: number) =>
   new Intl.NumberFormat("en-IN", {
@@ -109,6 +120,10 @@ export function BillingPos() {
   const [saleMessage, setSaleMessage] = useState<string | null>(null);
   const [lastSale, setLastSale] = useState<LastSale | null>(null);
   const [saleBusy, setSaleBusy] = useState(false);
+  const [sendPromptOpen, setSendPromptOpen] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [sendErr, setSendErr] = useState<string | null>(null);
+  const [invoicePreviewSale, setInvoicePreviewSale] = useState<LastSale | null>(null);
 
   const searchQuery = useBillingStore((s) => s.searchQuery);
   const setSearchQuery = useBillingStore((s) => s.setSearchQuery);
@@ -314,13 +329,36 @@ export function BillingPos() {
         // keep the fallbacks captured above
       }
 
-      setLastSale({ orderId, invoiceNumber, amountPaid, customerName, customerPhone });
+      const sale = { orderId, invoiceNumber, amountPaid, customerName, customerPhone };
+      setLastSale(sale);
       setSaleMessage("Sale completed. Stock reduced automatically.");
+      // Offer automated WhatsApp delivery when the customer has a usable number.
+      setSendErr(null);
+      setSendPromptOpen(normalizeWhatsAppPhone(customerPhone) !== null);
       clearCart();
     } catch (e) {
       setSaleMessage(e instanceof Error ? e.message : "Could not complete sale.");
     } finally {
       setSaleBusy(false);
+    }
+  }
+
+  async function handleAutoSend(force = false) {
+    if (!lastSale || sending) return;
+    setSending(true);
+    setSendErr(null);
+    try {
+      const out = await sendInvoiceWhatsApp(lastSale.orderId, force);
+      setSendPromptOpen(false);
+      toast.success(
+        out.dryRun
+          ? "Invoice queued (WhatsApp is in test mode)"
+          : "Invoice sent on WhatsApp",
+      );
+    } catch (e) {
+      setSendErr(e instanceof Error ? e.message : "Failed to send invoice");
+    } finally {
+      setSending(false);
     }
   }
 
@@ -697,6 +735,112 @@ export function BillingPos() {
       </div>
 
       <InvoicePreviewSheet />
+
+      <Dialog
+        open={sendPromptOpen}
+        onOpenChange={(open) => {
+          if (!sending) {
+            setSendPromptOpen(open);
+            if (!open) setSendErr(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Send invoice on WhatsApp?</DialogTitle>
+            <DialogDescription>
+              {lastSale ? (
+                <>
+                  Invoice{" "}
+                  <span className="font-medium text-foreground">
+                    {lastSale.invoiceNumber ?? lastSale.orderId}
+                  </span>{" "}
+                  for {money(Number(lastSale.amountPaid) || 0)} will be sent to{" "}
+                  <span className="font-medium text-foreground">
+                    {lastSale.customerName || "the customer"}
+                  </span>{" "}
+                  ({lastSale.customerPhone}). The invoice PDF link is delivered
+                  automatically — no redirect.
+                </>
+              ) : null}
+            </DialogDescription>
+          </DialogHeader>
+          {sendErr ? <p className="text-sm text-destructive">{sendErr}</p> : null}
+          <DialogFooter className="gap-2 sm:justify-between">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={sending}
+              onClick={() => setInvoicePreviewSale(lastSale)}
+            >
+              <Receipt className="size-4" />
+              Preview
+            </Button>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={sending}
+                onClick={() => {
+                  setSendPromptOpen(false);
+                  setSendErr(null);
+                }}
+              >
+                Skip
+              </Button>
+              {sendErr ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="gap-2 border-amber-500/50 text-amber-700 hover:bg-amber-50 hover:text-amber-800 dark:text-amber-400 dark:hover:bg-amber-950/40"
+                  disabled={sending}
+                  onClick={() => void handleAutoSend(true)}
+                >
+                  {sending ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" />
+                      Resending…
+                    </>
+                  ) : (
+                    <>
+                      <MessageCircle className="size-4" />
+                      Resend anyway
+                    </>
+                  )}
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  className="gap-2"
+                  disabled={sending}
+                  onClick={() => void handleAutoSend(false)}
+                >
+                  {sending ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" />
+                      Sending…
+                    </>
+                  ) : (
+                    <>
+                      <MessageCircle className="size-4" />
+                      Send now
+                    </>
+                  )}
+                </Button>
+              )}
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <OrderInvoiceSheet
+        orderId={invoicePreviewSale?.orderId ?? null}
+        invoiceLabel={invoicePreviewSale?.invoiceNumber ?? null}
+        open={invoicePreviewSale !== null}
+        onOpenChange={(open) => {
+          if (!open) setInvoicePreviewSale(null);
+        }}
+      />
     </div>
   );
 }

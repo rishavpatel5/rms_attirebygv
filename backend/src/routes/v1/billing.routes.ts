@@ -4,6 +4,7 @@ import { requireRoles } from "../../modules/auth/middleware/authorize-roles.midd
 import { ROLES_POS_WRITE, ROLES_READ_ALL } from "../../modules/auth/role-groups.js";
 import { asyncHandler } from "../../utils/async-handler.js";
 import { billingController } from "../../modules/billing/billing.controller.js";
+import { whatsappController } from "../../modules/whatsapp/whatsapp.controller.js";
 import { UserRole } from "@prisma/client";
 
 export const billingRouter = Router();
@@ -46,6 +47,12 @@ billingRouter.get(
   "/orders/:orderId/invoice",
   ...read,
   asyncHandler((req, res) => billingController.getInvoice(req, res)),
+);
+
+billingRouter.post(
+  "/orders/:orderId/send-invoice",
+  ...write,
+  asyncHandler((req, res) => whatsappController.sendInvoice(req, res)),
 );
 
 billingRouter.get(

@@ -2,6 +2,7 @@ import {
   apiDeleteAuthed,
   apiGetJsonAuthed,
   apiPatchJsonAuthed,
+  apiPostJsonAuthed,
   getStoredAccessToken,
 } from "./api-client";
 
@@ -112,6 +113,22 @@ export async function correctOrderItemVariant(
   await apiPatchJsonAuthed(
     `/api/v1/billing/orders/${encodeURIComponent(orderId)}/items/${encodeURIComponent(itemId)}/variant`,
     { variantId },
+  );
+}
+
+export type SendInvoiceResult = { status: string; dryRun?: boolean };
+
+/**
+ * Send the invoice PDF link to the customer's WhatsApp via the backend (WATI).
+ * Fully automated — no wa.me redirect. `force` re-sends past the double-send guard.
+ */
+export async function sendInvoiceWhatsApp(
+  orderId: string,
+  force = false,
+): Promise<SendInvoiceResult> {
+  return apiPostJsonAuthed<SendInvoiceResult>(
+    `/api/v1/billing/orders/${encodeURIComponent(orderId)}/send-invoice`,
+    { force },
   );
 }
 
