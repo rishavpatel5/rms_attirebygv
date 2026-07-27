@@ -22,14 +22,17 @@ function extractProviderMessageId(body: unknown): string | null {
   return null;
 }
 
-/** WATI can return HTTP 200 with `result: false` for an invalid number/template — check the body. */
+/**
+ * WATI accepted the message when it returns 2xx and does not explicitly say `result: false`.
+ * Note: `validWhatsAppNumber` is NOT used as a failure signal — WATI sets it from a cache and it
+ * can be false even when the message is delivered, which would otherwise cause false "rejected".
+ */
 function isWatiSuccess(res: { ok: boolean; body: unknown }): boolean {
   if (!res.ok) return false;
   if (res.body && typeof res.body === "object") {
     const b = res.body as Record<string, unknown>;
     if (b.result === false) return false;
     if (typeof b.result === "string" && b.result.toLowerCase() === "false") return false;
-    if (b.validWhatsAppNumber === false) return false;
   }
   return true;
 }
