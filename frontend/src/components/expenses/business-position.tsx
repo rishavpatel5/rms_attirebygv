@@ -26,6 +26,8 @@ type BusinessPosition = {
   stockCashOut: number;
   operatingExpenses: number;
   inventoryValue: number;
+  supplierRefunds: number;
+  purchaseReturnGainLoss: number;
   netProfit: number;
   cashInHand: number;
   hasCapital: boolean;
@@ -212,11 +214,24 @@ export function BusinessPosition() {
               <BreakdownRow label="Stock purchased (paid)" value={-position.stockCashOut} />
               <BreakdownRow label="Operating expenses" value={-position.operatingExpenses} />
               <BreakdownRow label="Owner drawings" value={-position.ownerDrawings} />
+              {position.supplierRefunds !== 0 ? (
+                <BreakdownRow label="Supplier refunds" value={position.supplierRefunds} />
+              ) : null}
               <div className="flex items-center justify-between px-4 py-2.5 font-semibold">
                 <span className="text-sm">= Cash in hand</span>
                 <span className="tabular-nums">{fmtInr(position.cashInHand)}</span>
               </div>
             </div>
+
+            {position.purchaseReturnGainLoss !== 0 ? (
+              <p className="-mt-2 px-1 text-xs text-muted-foreground">
+                Purchase-return {position.purchaseReturnGainLoss < 0 ? "loss" : "gain"}:{" "}
+                <span className={position.purchaseReturnGainLoss < 0 ? "text-rose-600" : "text-emerald-600"}>
+                  {fmtSigned(position.purchaseReturnGainLoss)}
+                </span>{" "}
+                (included in net profit)
+              </p>
+            ) : null}
 
             {/* ── Capital & Drawings ledger ── */}
             <div className="space-y-3">

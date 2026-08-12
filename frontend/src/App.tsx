@@ -13,6 +13,7 @@ import { LoginPage } from "@/pages/login-page";
 import { PublicInvoicePage } from "@/pages/public-invoice-page";
 import { OffersPage } from "@/pages/offers-page";
 import { PurchasesPage } from "@/pages/purchases-page";
+import { PurchaseReturnsPage } from "@/pages/purchase-returns-page";
 import { PurchaseAnalysisPage } from "@/pages/purchase-analysis-page";
 import { ReportsPage } from "@/pages/reports-page";
 import { SettingsPage } from "@/pages/settings-page";
@@ -29,6 +30,7 @@ const router = createBrowserRouter([
       { path: "dashboard", element: <DashboardPage /> },
       { path: "dashboard/catalog", element: <CatalogPage /> },
       { path: "dashboard/purchases", element: <PurchasesPage /> },
+      { path: "dashboard/purchase-returns", element: <PurchaseReturnsPage /> },
       { path: "dashboard/inventory", element: <InventoryPage /> },
       { path: "dashboard/customers", element: <CustomersPage /> },
       { path: "dashboard/customers/:id", element: <CustomerDetailPage /> },

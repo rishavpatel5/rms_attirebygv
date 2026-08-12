@@ -3,6 +3,7 @@ import { read as xlsxRead, utils as xlsxUtils } from "xlsx";
 import { prisma } from "../../lib/prisma.js";
 import { AppError } from "../../middleware/error-handler.js";
 import { computeLine, computeOrderTotals } from "../../lib/gst-calculator.js";
+import { resolveVariantMasterUpdate } from "../../lib/bulk-import-variant-update.js";
 
 const EXPECTED_HEADERS = [
   "sr_no", "product_name", "sku", "shelf_category", "kind", "gender",
@@ -174,6 +175,7 @@ export type CatalogResult = {
   newSizesCreated: number;
   newProductsCreated: number;
   newVariantsCreated: number;
+  variantsUpdated: number;
 };
 
 // Step 2 result — stock received against an already-created catalog batch.
@@ -439,7 +441,7 @@ export async function commitCatalog(
   createdById: string | null,
 ): Promise<CatalogResult> {
   let newCategoriesCreated = 0, newColorsCreated = 0, newSizesCreated = 0;
-  let newProductsCreated = 0, newVariantsCreated = 0;
+  let newProductsCreated = 0, newVariantsCreated = 0, variantsUpdated = 0;
 
   // Create the batch up-front, marked AWAITING_STOCK until step 2 receives stock.
   const batch = await prisma.bulkImportBatch.create({
@@ -505,7 +507,19 @@ export async function commitCatalog(
     const resolvedColor = row.colorId ?? (r.color ? colorMap.get(r.color.toLowerCase()) : undefined);
     const resolvedSize  = row.sizeId  ?? (r.size  ? sizeMap.get(r.size.toLowerCase())   : undefined);
 
-    if (row.action === "receive_only") continue; // variant already exists — nothing to create
+    if (row.action === "receive_only") {
+      // Existing SKU → keep the SAME variant (no duplicate) and refresh only the Excel-controlled
+      // price/threshold fields (see resolveVariantMasterUpdate for the exact rules). GST and
+      // product-level fields are intentionally left untouched (approved scope).
+      if (row.variantId) {
+        const data = resolveVariantMasterUpdate(r);
+        if (Object.keys(data).length > 0) {
+          await prisma.productVariant.update({ where: { id: row.variantId }, data });
+          variantsUpdated++;
+        }
+      }
+      continue;
+    }
 
     let productId = row.productId;
 
@@ -562,6 +576,7 @@ export async function commitCatalog(
     newSizesCreated,
     newProductsCreated,
     newVariantsCreated,
+    variantsUpdated,
   };
 }
 

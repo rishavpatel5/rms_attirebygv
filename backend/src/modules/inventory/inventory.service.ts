@@ -16,6 +16,7 @@ export const MANUAL_ADJUSTMENT_MOVEMENT_TYPES: InventoryMovementType[] = [
 
 const OUTBOUND_TYPES: InventoryMovementType[] = [
   "SALE_OUT",
+  "PURCHASE_RETURN_OUT",
   "ADJUSTMENT_OUT",
   "DAMAGE_OUT",
   "EXCHANGE_OUT",

@@ -1,4 +1,11 @@
-import { CapitalEntryType, OrderStatus, Prisma, PurchaseOrderStatus } from "@prisma/client";
+import {
+  CapitalEntryType,
+  OrderStatus,
+  Prisma,
+  PurchaseOrderStatus,
+  PurchaseReturnSettlement,
+  PurchaseReturnStatus,
+} from "@prisma/client";
 import { prisma } from "../../lib/prisma.js";
 import { AppError } from "../../middleware/error-handler.js";
 import { buildMeta, parsePagination } from "../../lib/pagination.js";
@@ -143,14 +150,46 @@ async function capitalTotals(): Promise<{ capitalIntroduced: number; ownerDrawin
   return { capitalIntroduced, ownerDrawings };
 }
 
+/** Confirmed supplier returns: actual refund (cash-family only) and realized gain/loss. */
+async function purchaseReturnTotals(): Promise<{ supplierRefunds: number; gainLoss: number }> {
+  const [refund, diff] = await Promise.all([
+    prisma.purchaseReturn.aggregate({
+      _sum: { refundAmount: true },
+      where: {
+        status: PurchaseReturnStatus.CONFIRMED,
+        settlementMethod: {
+          in: [PurchaseReturnSettlement.CASH, PurchaseReturnSettlement.BANK, PurchaseReturnSettlement.UPI],
+        },
+      },
+    }),
+    prisma.purchaseReturn.aggregate({
+      _sum: { difference: true },
+      where: { status: PurchaseReturnStatus.CONFIRMED },
+    }),
+  ]);
+  return {
+    supplierRefunds: Number(refund._sum.refundAmount ?? 0),
+    gainLoss: Number(diff._sum.difference ?? 0),
+  };
+}
+
 export async function getBusinessPosition() {
-  const [agg, cap] = await Promise.all([liveAggregates(), capitalTotals()]);
+  const [agg, cap, ret] = await Promise.all([
+    liveAggregates(),
+    capitalTotals(),
+    purchaseReturnTotals(),
+  ]);
 
   const cashInHand =
-    cap.capitalIntroduced + agg.salesCollected - agg.stockCashOut - agg.operatingExpenses - cap.ownerDrawings;
+    cap.capitalIntroduced +
+    agg.salesCollected -
+    agg.stockCashOut -
+    agg.operatingExpenses -
+    cap.ownerDrawings +
+    ret.supplierRefunds;
 
-  // Same definition as the Expenses page "Net profit" card.
-  const netProfit = agg.salesCollected - agg.operatingExpenses - agg.promoCost;
+  // Same definition as the Expenses page "Net profit" card, plus realized purchase-return gain/loss.
+  const netProfit = agg.salesCollected - agg.operatingExpenses - agg.promoCost + ret.gainLoss;
 
   return {
     capitalIntroduced: cap.capitalIntroduced,
@@ -159,6 +198,8 @@ export async function getBusinessPosition() {
     stockCashOut: agg.stockCashOut,
     operatingExpenses: agg.operatingExpenses,
     inventoryValue: agg.inventoryValue,
+    supplierRefunds: ret.supplierRefunds,
+    purchaseReturnGainLoss: ret.gainLoss,
     netProfit,
     cashInHand,
     hasCapital: cap.capitalIntroduced > 0 || cap.ownerDrawings > 0,
@@ -170,7 +211,11 @@ export async function getBusinessPosition() {
  * Solves: target = (existingCapital + opening) + sales − stock − expenses − drawings.
  */
 export async function setOpeningCash(targetCash: number) {
-  const [agg, cap] = await Promise.all([liveAggregates(), capitalTotals()]);
+  const [agg, cap, ret] = await Promise.all([
+    liveAggregates(),
+    capitalTotals(),
+    purchaseReturnTotals(),
+  ]);
 
   const opening =
     targetCash -
@@ -178,7 +223,8 @@ export async function setOpeningCash(targetCash: number) {
     agg.stockCashOut +
     agg.operatingExpenses -
     agg.salesCollected +
-    cap.ownerDrawings;
+    cap.ownerDrawings -
+    ret.supplierRefunds;
 
   if (opening <= 0) {
     throw new AppError(

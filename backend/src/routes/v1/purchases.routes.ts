@@ -6,12 +6,40 @@ import {
   ROLES_READ_ALL,
 } from "../../modules/auth/role-groups.js";
 import { purchaseController } from "../../modules/purchases/purchase.controller.js";
+import { purchaseReturnController } from "../../modules/purchases/purchase-return.controller.js";
 import { asyncHandler } from "../../utils/async-handler.js";
 
 export const purchasesRouter = Router();
 
 const read = [authenticate, requireRoles(...ROLES_READ_ALL)];
 const write = [authenticate, requireRoles(...ROLES_PURCHASE_WRITE)];
+
+// Purchase returns (debit notes). Registered before "/:id" so "/returns" isn't captured.
+purchasesRouter.post(
+  "/returns/preview",
+  ...write,
+  asyncHandler((req, res) => purchaseReturnController.preview(req, res)),
+);
+purchasesRouter.post(
+  "/returns",
+  ...write,
+  asyncHandler((req, res) => purchaseReturnController.create(req, res)),
+);
+purchasesRouter.get(
+  "/returns/stock",
+  ...read,
+  asyncHandler((req, res) => purchaseReturnController.searchStock(req, res)),
+);
+purchasesRouter.get(
+  "/returns",
+  ...read,
+  asyncHandler((req, res) => purchaseReturnController.list(req, res)),
+);
+purchasesRouter.get(
+  "/returns/:id",
+  ...read,
+  asyncHandler((req, res) => purchaseReturnController.get(req, res)),
+);
 
 purchasesRouter.get(
   "/",

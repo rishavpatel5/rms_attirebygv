@@ -15,6 +15,7 @@ import {
   ShoppingCart,
   Sheet,
   Truck,
+  Undo2,
   Users,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
@@ -102,6 +103,7 @@ const WORKFLOW: NavItem[] = [
 const MANAGE: NavItem[] = [
   { to: "/dashboard/customers", label: "Customers", icon: Users },
   { to: "/dashboard/suppliers", label: "Suppliers", icon: Truck },
+  { to: "/dashboard/purchase-returns", label: "Return to supplier", icon: Undo2 },
   { to: "/dashboard/purchase-analysis", label: "Purchase analysis", icon: ClipboardList },
   { to: "/dashboard/reports", label: "Reports", icon: BarChart2, step: 5 },
   { to: "/dashboard/offers", label: "Offers", icon: Gift },
