@@ -612,11 +612,13 @@ export async function commitStock(
     : null;
 
   // Resolve every SKU to its variant (all should exist after the catalog step).
-  const skus = input.rows.map((r) => r.raw.sku);
-  const variants = await prisma.productVariant.findMany({
-    where: { sku: { in: skus } },
-    select: { id: true, sku: true },
-  });
+  // CASE-INSENSITIVE to match how the scan matches SKUs (skuMap keyed by lower(sku)) and how the
+  // catalog step resolves existing variants — otherwise a stored SKU whose casing differs from the
+  // sheet is matched by the scan (receive_only) but missed here, wrongly reporting "not in catalog".
+  const lowerSkus = [...new Set(input.rows.map((r) => r.raw.sku.toLowerCase()))];
+  const variants = await prisma.$queryRaw<{ id: string; sku: string }[]>(
+    Prisma.sql`SELECT id, sku FROM product_variants WHERE lower(sku) IN (${Prisma.join(lowerSkus)})`,
+  );
   const skuToId = new Map(variants.map((v) => [v.sku.toLowerCase(), v.id]));
 
   const missing: string[] = [];
