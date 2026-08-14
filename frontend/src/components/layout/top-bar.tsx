@@ -15,7 +15,10 @@ import { Input } from "@/components/ui/input";
 import { MobileNavTrigger } from "@/components/layout/app-sidebar";
 import { clearStoredTokens } from "@/lib/api-client";
 
-/** Optional cross-link to the other GV business (e.g. GV Nutrition). Hidden until set. */
+/**
+ * Optional cross-link to the other GV business (e.g. GV Nutrition). Hidden until set.
+ * NOTE: VITE_OTHER_APP_URL is a build-time var — it only takes effect after a fresh build.
+ */
 const OTHER_APP_URL = import.meta.env.VITE_OTHER_APP_URL as string | undefined;
 const OTHER_APP_NAME =
   (import.meta.env.VITE_OTHER_APP_NAME as string | undefined) ?? "GV Nutrition";
