@@ -1,4 +1,4 @@
-import { Search } from "lucide-react";
+import { ArrowLeftRight, Search } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { NotificationsMenu } from "@/components/layout/notifications-menu";
 import { ThemeToggle } from "@/providers/theme-provider";
@@ -14,6 +14,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { MobileNavTrigger } from "@/components/layout/app-sidebar";
 import { clearStoredTokens } from "@/lib/api-client";
+
+/** Optional cross-link to the other GV business (e.g. GV Nutrition). Hidden until set. */
+const OTHER_APP_URL = import.meta.env.VITE_OTHER_APP_URL as string | undefined;
+const OTHER_APP_NAME =
+  (import.meta.env.VITE_OTHER_APP_NAME as string | undefined) ?? "GV Nutrition";
 
 export function TopBar({ title }: { title: string }) {
   const navigate = useNavigate();
@@ -42,6 +47,21 @@ export function TopBar({ title }: { title: string }) {
           />
         </div>
       </div>
+      {OTHER_APP_URL ? (
+        <Button
+          asChild
+          type="button"
+          variant="outline"
+          size="sm"
+          className="hidden gap-1.5 rounded-full border-border/80 sm:inline-flex"
+          title={`Switch to ${OTHER_APP_NAME}`}
+        >
+          <a href={OTHER_APP_URL} target="_blank" rel="noopener noreferrer">
+            <ArrowLeftRight className="size-3.5" />
+            {OTHER_APP_NAME}
+          </a>
+        </Button>
+      ) : null}
       <NotificationsMenu />
       <ThemeToggle />
       <DropdownMenu>
