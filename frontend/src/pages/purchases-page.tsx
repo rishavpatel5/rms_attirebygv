@@ -47,6 +47,14 @@ type VariantRow = {
   sku: string;
   color: { name: string } | null;
   size: { label: string } | null;
+  listPrice?: number | string | null;
+  costPrice?: number | string | null;
+};
+
+type VariantCostContext = {
+  hasPurchaseHistory: boolean;
+  lastCost: number | null;
+  avgCost: number | null;
 };
 
 type CartLine = {
@@ -64,6 +72,10 @@ type CartLine = {
   cgst: number;
   sgst: number;
   igst: number;
+  /** New shelf price to apply on receive (null = leave the shelf price alone). */
+  mrp: number | null;
+  /** The catalog shelf price when the line was added — to show what an MRP change moves. */
+  prevListPrice: number | null;
 };
 
 function fmtInr(n: number) {
@@ -123,6 +135,8 @@ export function PurchasesPage() {
 
   const [draftQty, setDraftQty] = useState(1);
   const [draftCost, setDraftCost] = useState("");
+  const [draftMrp, setDraftMrp] = useState("");
+  const [costCtx, setCostCtx] = useState<VariantCostContext | null>(null);
   const [draftGstEnabled, setDraftGstEnabled] = useState(true);
   const [draftGstInclusive, setDraftGstInclusive] = useState(false);
 
@@ -223,6 +237,24 @@ export function PurchasesPage() {
     [purchasableCatalog, selectedProductId],
   );
   const selectedVariant = variants[selectedVariantIndex] ?? null;
+  const selectedVariantId = selectedVariant?.id ?? null;
+
+  // Pre-fill both rate boxes from the catalog and load the cost hint when a variant is picked.
+  useEffect(() => {
+    if (!selectedVariant) {
+      setCostCtx(null);
+      return;
+    }
+    setDraftCost(selectedVariant.costPrice != null ? String(Number(selectedVariant.costPrice)) : "");
+    setDraftMrp(selectedVariant.listPrice != null ? String(Number(selectedVariant.listPrice)) : "");
+    let cancelled = false;
+    setCostCtx(null);
+    void apiGetJsonAuthed<VariantCostContext>(`/api/v1/purchases/variant-cost/${selectedVariant.id}`)
+      .then((d) => { if (!cancelled) setCostCtx(d); })
+      .catch(() => { if (!cancelled) setCostCtx(null); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedVariantId]);
 
   const searchActive = searchQuery.trim().length > 0;
   const noResults = searchActive && !catalogLoading && catalog.length === 0;
@@ -249,6 +281,9 @@ export function PurchasesPage() {
     const unit = Math.max(0, Number(draftCost) || 0);
     const qty = Math.max(1, Math.floor(draftQty) || 1);
     const rates = defaultRates(selectedProduct.kind);
+    const mrpNum = Number(draftMrp);
+    const mrp = Number.isFinite(mrpNum) && mrpNum > 0 ? mrpNum : null;
+    const prevListPrice = selectedVariant.listPrice != null ? Number(selectedVariant.listPrice) : null;
     const row: CartLine = {
       id: crypto.randomUUID(),
       variantId: selectedVariant.id,
@@ -264,6 +299,8 @@ export function PurchasesPage() {
       cgst: rates.cgst,
       sgst: rates.sgst,
       igst: rates.igst,
+      mrp,
+      prevListPrice,
     };
     setLines((prev) => {
       const i = prev.findIndex((l) => l.variantId === row.variantId);
@@ -279,6 +316,7 @@ export function PurchasesPage() {
                 cgst: row.cgst,
                 sgst: row.sgst,
                 igst: row.igst,
+                mrp: row.mrp,
               }
             : l,
         );
@@ -286,7 +324,8 @@ export function PurchasesPage() {
       return [...prev, row];
     });
     setDraftQty(1);
-    setDraftCost("");
+    setDraftCost(selectedVariant.costPrice != null ? String(Number(selectedVariant.costPrice)) : "");
+    setDraftMrp(selectedVariant.listPrice != null ? String(Number(selectedVariant.listPrice)) : "");
   }
 
   async function receiveInventory() {
@@ -310,6 +349,7 @@ export function PurchasesPage() {
         cgstRate: l.cgst,
         sgstRate: l.sgst,
         igstRate: l.igst,
+        mrp: l.mrp,
       }));
     if (payloadLines.length === 0) {
       setMsg("Add at least one line to the purchase cart.");
@@ -492,41 +532,45 @@ export function PurchasesPage() {
                           </button>
                         ))}
                       </div>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <div className="space-y-1.5">
-                          <Label className="text-xs">Quantity</Label>
-                          <div className="flex items-center gap-1 rounded-lg border border-border/80 p-0.5">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="size-8 rounded-md"
-                              onClick={() => setDraftQty((q) => Math.max(1, q - 1))}
-                            >
-                              <Minus className="size-3.5" />
-                            </Button>
-                            <Input
-                              className="h-8 border-0 text-center text-sm tabular-nums shadow-none"
-                              type="number"
-                              min={1}
-                              value={draftQty}
-                              onChange={(e) =>
-                                setDraftQty(Math.max(1, Math.floor(Number(e.target.value) || 1)))
-                              }
-                            />
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="size-8 rounded-md"
-                              onClick={() => setDraftQty((q) => q + 1)}
-                            >
-                              <Plus className="size-3.5" />
-                            </Button>
-                          </div>
+                      {/* Quantity on its own narrow row */}
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Quantity</Label>
+                        <div className="flex w-40 items-center gap-1 rounded-lg border border-border/80 p-0.5">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 rounded-md"
+                            onClick={() => setDraftQty((q) => Math.max(1, q - 1))}
+                          >
+                            <Minus className="size-3.5" />
+                          </Button>
+                          <Input
+                            className="h-8 border-0 text-center text-sm tabular-nums shadow-none"
+                            type="number"
+                            min={1}
+                            value={draftQty}
+                            onChange={(e) =>
+                              setDraftQty(Math.max(1, Math.floor(Number(e.target.value) || 1)))
+                            }
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 rounded-md"
+                            onClick={() => setDraftQty((q) => q + 1)}
+                          >
+                            <Plus className="size-3.5" />
+                          </Button>
                         </div>
-                        <div className="space-y-1.5">
+                      </div>
+
+                      {/* The two rate boxes read together — same shape, side by side */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="flex flex-col gap-1">
                           <Label className="text-xs">Purchase rate (unit)</Label>
+                          <span className="text-[11px] text-muted-foreground">the new cost price</span>
                           <Input
                             type="number"
                             min={0}
@@ -536,8 +580,57 @@ export function PurchasesPage() {
                             onChange={(e) => setDraftCost(e.target.value)}
                             className="h-9 rounded-lg text-sm tabular-nums"
                           />
+                          <p className="min-h-[2.25rem] text-[11px] leading-tight text-muted-foreground">
+                            {(() => {
+                              if (!costCtx) return "";
+                              if (!costCtx.hasPurchaseHistory) return "Never purchased yet — this sets the first cost.";
+                              const last = costCtx.lastCost ?? 0;
+                              const avg = costCtx.avgCost ?? 0;
+                              const d = (Number(draftCost) || 0) - last;
+                              const move = Math.abs(d) < 0.005 ? "unchanged" : d > 0 ? `+${fmtInr(d)}` : `−${fmtInr(-d)}`;
+                              return `Last bought at ${fmtInr(last)} · avg cost ${fmtInr(avg)} · ${move}`;
+                            })()}
+                          </p>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <Label className="text-xs">MRP (selling price)</Label>
+                          <span className="text-[11px] text-muted-foreground">the new shelf price</span>
+                          <Input
+                            type="number"
+                            min={0}
+                            step={0.01}
+                            placeholder="0.00"
+                            value={draftMrp}
+                            onChange={(e) => setDraftMrp(e.target.value)}
+                            className="h-9 rounded-lg text-sm tabular-nums"
+                          />
+                          <p className="min-h-[2.25rem] text-[11px] leading-tight text-muted-foreground">
+                            {(() => {
+                              const cur = selectedVariant?.listPrice != null ? Number(selectedVariant.listPrice) : 0;
+                              const mrp = Number(draftMrp) || 0;
+                              if (!(mrp > 0)) return `Shelf price stays ${fmtInr(cur)}.`;
+                              const cost = Number(draftCost) || 0;
+                              const margin = mrp - cost;
+                              const pct = mrp > 0 ? (margin / mrp) * 100 : 0;
+                              const d = mrp - cur;
+                              const move = Math.abs(d) < 0.005 ? "unchanged" : d > 0 ? `+${fmtInr(d)}` : `−${fmtInr(-d)}`;
+                              return (
+                                <span className={mrp < cost ? "text-destructive" : undefined}>
+                                  {`Currently selling at ${fmtInr(cur)} · margin ${fmtInr(margin)} (${pct.toFixed(0)}%) · ${move}`}
+                                  {mrp < cost ? " · below cost!" : ""}
+                                </span>
+                              );
+                            })()}
+                          </p>
                         </div>
                       </div>
+
+                      <p className="rounded-md bg-muted/40 p-2 text-[11px] leading-snug text-muted-foreground">
+                        Both boxes are pre-filled from the catalog and editable. If this supplier's rate
+                        has moved up or down, change it here — and change the MRP too if the shelf price
+                        should move with it. Both save to the catalog when you receive the stock. Clear
+                        the MRP box to leave the selling price as it is.
+                      </p>
                       <div className="flex flex-wrap items-center gap-4 text-sm">
                         <label className="flex cursor-pointer items-center gap-2">
                           <input
@@ -628,6 +721,12 @@ export function PurchasesPage() {
                             <TableCell>
                               <div className="text-sm font-medium leading-tight">{l.productName}</div>
                               <div className="text-[11px] text-muted-foreground">{l.variantSku}</div>
+                              {l.mrp != null && l.mrp !== l.prevListPrice ? (
+                                <div className="mt-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400">
+                                  MRP → {fmtInr(l.mrp)}
+                                  {l.prevListPrice != null ? ` (was ${fmtInr(l.prevListPrice)})` : ""}
+                                </div>
+                              ) : null}
                             </TableCell>
                             <TableCell className="max-w-[120px] text-xs text-muted-foreground">
                               <ColorLabel colorName={l.colorName}>{l.variantDisplay}</ColorLabel>

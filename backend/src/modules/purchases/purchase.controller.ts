@@ -24,6 +24,11 @@ export const purchaseController = {
     res.json({ data: row });
   },
 
+  async variantCost(req: Request, res: Response): Promise<void> {
+    const out = await purchaseService.getVariantCostContext(req.params.variantId!);
+    res.json({ data: out });
+  },
+
   async create(req: Request, res: Response): Promise<void> {
     const body = parseBody(createPurchaseOrderBodySchema, req.body);
     const row = await purchaseService.createPurchaseOrder({

@@ -20,6 +20,8 @@ export const purchaseLineInputSchema = z.object({
   cgstRate: decimalLike.min(0).max(100).optional().default(0),
   sgstRate: decimalLike.min(0).max(100).optional().default(0),
   igstRate: decimalLike.min(0).max(100).optional().default(0),
+  /** New shelf price (MRP) to write to the variant on receive. Null/0 = leave shelf price alone. */
+  mrp: decimalLike.min(0).max(1_000_000).nullable().optional(),
 });
 
 export const replacePurchaseLinesBodySchema = z.object({

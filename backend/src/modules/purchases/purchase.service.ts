@@ -154,6 +154,33 @@ export async function getPurchaseOrderById(id: string) {
   };
 }
 
+/**
+ * DISPLAY-ONLY cost context for the receive screen's purchase-rate hint.
+ * hasPurchaseHistory distinguishes a real average from "never purchased" (so the UI stops
+ * dressing up the catalog cost_price as an "avg cost"). This computes WAC from received lines
+ * ONLY for the hint — it does NOT touch the shared WAC resolver that feeds COGS/margin.
+ */
+export async function getVariantCostContext(variantId: string): Promise<{
+  hasPurchaseHistory: boolean;
+  lastCost: number | null;
+  avgCost: number | null;
+}> {
+  const rows = await prisma.purchaseOrderItem.findMany({
+    where: { variantId, quantityReceived: { gt: 0 } },
+    select: { unitCostExclusive: true, quantityReceived: true, createdAt: true },
+    orderBy: { createdAt: "desc" },
+  });
+  if (rows.length === 0) return { hasPurchaseHistory: false, lastCost: null, avgCost: null };
+  const lastCost = Number(rows[0]!.unitCostExclusive);
+  let qty = 0;
+  let cost = 0;
+  for (const r of rows) {
+    qty += r.quantityReceived;
+    cost += r.quantityReceived * Number(r.unitCostExclusive);
+  }
+  return { hasPurchaseHistory: true, lastCost, avgCost: qty > 0 ? cost / qty : null };
+}
+
 export async function createPurchaseOrder(input: {
   supplierId: string;
   createdById: string | null;
@@ -278,6 +305,7 @@ export async function replacePurchaseLines(
           igstAmount: c.igstAmount,
           lineTotal: c.lineTotal,
           unitCostExclusive: unitEx,
+          mrpAtReceive: line.mrp != null && line.mrp > 0 ? new Prisma.Decimal(line.mrp) : null,
         },
       });
     }
@@ -347,6 +375,31 @@ export async function markPurchaseOrdered(
   });
 }
 
+/**
+ * MASTER-DATA refresh applied ONLY when stock is received:
+ *   - costPrice  <- the ex-GST rate paid (unitCostExclusive), when > 0
+ *   - listPrice  <- the MRP entered at receive, when > 0  (null/0 leaves the shelf price alone)
+ * Writes catalog fields only. It plays NO part in WAC, COGS, GST, cash, margin or the ledger —
+ * a received variant's WAC/COGS come from its purchase lines, not from costPrice.
+ */
+async function applyReceiveMasterRefresh(
+  tx: Prisma.TransactionClient,
+  variantId: string,
+  unitCostExclusive: Prisma.Decimal | number,
+  mrpAtReceive: Prisma.Decimal | number | null,
+): Promise<void> {
+  const data: Prisma.ProductVariantUpdateInput = {};
+  const cost = new Prisma.Decimal(unitCostExclusive);
+  if (cost.gt(0)) data.costPrice = cost;
+  if (mrpAtReceive != null) {
+    const mrp = new Prisma.Decimal(mrpAtReceive);
+    if (mrp.gt(0)) data.listPrice = mrp;
+  }
+  if (Object.keys(data).length > 0) {
+    await tx.productVariant.update({ where: { id: variantId }, data });
+  }
+}
+
 export async function receivePurchase(
   id: string,
   body: ReceiveBody,
@@ -410,6 +463,9 @@ export async function receivePurchase(
         where: { id: item.id },
         data: { quantityReceived: { increment: toReceive } },
       });
+
+      // Master-data refresh (catalog cost + shelf price). Never touches WAC/COGS/GST/cash.
+      await applyReceiveMasterRefresh(tx, item.variantId, item.unitCostExclusive, item.mrpAtReceive);
     }
 
     const refreshed = await tx.purchaseOrder.findUniqueOrThrow({
@@ -507,7 +563,10 @@ export async function saveAndReceivePurchase(input: {
       },
     });
 
-    const items: { id: string; variantId: string; quantityOrdered: number }[] = [];
+    const items: {
+      id: string; variantId: string; quantityOrdered: number;
+      unitCostExclusive: Prisma.Decimal; mrpAtReceive: Prisma.Decimal | null;
+    }[] = [];
 
     for (let i = 0; i < input.lines.length; i++) {
       const line = input.lines[i]!;
@@ -536,12 +595,15 @@ export async function saveAndReceivePurchase(input: {
           igstAmount: c.igstAmount,
           lineTotal: c.lineTotal,
           unitCostExclusive: unitEx,
+          mrpAtReceive: line.mrp != null && line.mrp > 0 ? new Prisma.Decimal(line.mrp) : null,
         },
       });
       items.push({
         id: row.id,
         variantId: row.variantId,
         quantityOrdered: row.quantityOrdered,
+        unitCostExclusive: unitEx,
+        mrpAtReceive: row.mrpAtReceive,
       });
     }
 
@@ -560,6 +622,8 @@ export async function saveAndReceivePurchase(input: {
         where: { id: it.id },
         data: { quantityReceived: it.quantityOrdered },
       });
+      // Master-data refresh (catalog cost + shelf price). Never touches WAC/COGS/GST/cash.
+      await applyReceiveMasterRefresh(tx, it.variantId, it.unitCostExclusive, it.mrpAtReceive);
     }
 
     return tx.purchaseOrder.update({

@@ -4,6 +4,11 @@ import { prisma } from "../../lib/prisma.js";
 import { AppError } from "../../middleware/error-handler.js";
 import { computeLine, computeOrderTotals } from "../../lib/gst-calculator.js";
 import { resolveVariantMasterUpdate } from "../../lib/bulk-import-variant-update.js";
+import {
+  nextUniqueCategorySlug,
+  nextUniqueSizeCode,
+  nextUniqueSlug,
+} from "../../lib/bulk-import-catalog-keys.js";
 
 const EXPECTED_HEADERS = [
   "sr_no", "product_name", "sku", "shelf_category", "kind", "gender",
@@ -204,16 +209,11 @@ export type RollbackResult = {
 
 // ── Helper ──────────────────────────────────────────────────────────────────
 
-async function uniqueSlug(base: string): Promise<string> {
-  let slug = base, i = 1;
-  while (await prisma.product.findUnique({ where: { slug } })) slug = `${base}-${i++}`;
-  return slug;
-}
-
-async function uniqueCategorySlug(base: string): Promise<string> {
-  let slug = base, i = 1;
-  while (await prisma.category.findUnique({ where: { slug } })) slug = `${slug}-${i++}`;
-  return slug;
+/** Split an array into fixed-size chunks so bulk INSERTs stay under Postgres' 65535-param limit. */
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
 }
 
 // ── Scan ────────────────────────────────────────────────────────────────────
@@ -436,136 +436,178 @@ export async function scanImportFile(buffer: Buffer): Promise<ScanResult> {
 // Creates colors, sizes, categories, products and variants. Marks the batch
 // AWAITING_STOCK. No purchase orders or inventory movements happen here, so a
 // failure mid-way can never leave stock half-applied.
+/** INSERT chunk size — small entities. Well under the 65535-param limit at any sheet size. */
+const CATALOG_INSERT_CHUNK = 1000;
+
 export async function commitCatalog(
   input: CommitRequest,
   createdById: string | null,
 ): Promise<CatalogResult> {
-  let newCategoriesCreated = 0, newColorsCreated = 0, newSizesCreated = 0;
-  let newProductsCreated = 0, newVariantsCreated = 0, variantsUpdated = 0;
+  let variantsUpdated = 0;
 
   // Create the batch up-front, marked AWAITING_STOCK until step 2 receives stock.
+  // (Timing unchanged from the original — only the catalog writes below are now batched.)
   const batch = await prisma.bulkImportBatch.create({
     data: { rowsImported: input.rows.length, createdById, status: "AWAITING_STOCK" },
   });
 
-  // ── Phase 1: Catalog — no wrapping transaction ──────────────────────────
-
-  // 1a. Colors
-  const colorMap = new Map<string, string>();
-  const pendingColors = new Map<string, string>();
+  // ── 1a. Colors — read once, resolve in memory, one bulk insert ──
+  // colorMap holds every referenced-new colour (reused + created); its size is the
+  // reported "new colours" count, matching the previous behaviour exactly.
+  const pendingColors = new Map<string, string>(); // lowercase -> original name
   for (const row of input.rows) {
     if (row.colorIsNew && row.raw.color && !row.colorId)
       pendingColors.set(row.raw.color.toLowerCase(), row.raw.color);
   }
-  for (const [key, name] of pendingColors) {
-    const ex = await prisma.color.findFirst({ where: { name: { equals: name, mode: "insensitive" } } });
-    colorMap.set(key, ex ? ex.id : (await prisma.color.create({ data: { name } })).id);
+  const colorMap = new Map<string, string>(); // lowercase -> id
+  if (pendingColors.size > 0) {
+    const existing = await prisma.color.findMany({ select: { id: true, name: true } });
+    const byName = new Map(existing.map((c) => [c.name.toLowerCase(), c.id]));
+    const toCreate: { name: string }[] = [];
+    for (const [key, name] of pendingColors) {
+      const ex = byName.get(key);
+      if (ex) colorMap.set(key, ex);
+      else toCreate.push({ name });
+    }
+    for (const part of chunk(toCreate, CATALOG_INSERT_CHUNK)) {
+      const created = await prisma.color.createManyAndReturn({ data: part, select: { id: true, name: true } });
+      for (const c of created) colorMap.set(c.name.toLowerCase(), c.id);
+    }
   }
-  newColorsCreated = colorMap.size;
+  const newColorsCreated = colorMap.size;
 
-  // 1b. Sizes
-  const sizeMap = new Map<string, string>();
-  const pendingSizes = new Map<string, string>();
+  // ── 1b. Sizes — read once; generate unique codes in memory (same algorithm) ──
+  const pendingSizes = new Map<string, string>(); // lowercase -> label
   for (const row of input.rows) {
     if (row.sizeIsNew && row.raw.size && !row.sizeId)
       pendingSizes.set(row.raw.size.toLowerCase(), row.raw.size);
   }
-  for (const [key, label] of pendingSizes) {
-    const ex = await prisma.size.findFirst({ where: { label: { equals: label, mode: "insensitive" } } });
-    if (ex) { sizeMap.set(key, ex.id); continue; }
-    let code = label.toUpperCase().replace(/[^A-Z0-9]+/g, "_").slice(0, 20);
-    let n = 1;
-    while (await prisma.size.findUnique({ where: { code } })) code = `${code.slice(0, 17)}_${n++}`;
-    sizeMap.set(key, (await prisma.size.create({ data: { label, code } })).id);
+  const sizeMap = new Map<string, string>();
+  if (pendingSizes.size > 0) {
+    const existing = await prisma.size.findMany({ select: { id: true, label: true, code: true } });
+    const byLabel = new Map(existing.map((s) => [s.label.toLowerCase(), s.id]));
+    const usedCodes = new Set(existing.map((s) => s.code));
+    const toCreate: { label: string; code: string }[] = [];
+    for (const [key, label] of pendingSizes) {
+      const ex = byLabel.get(key);
+      if (ex) { sizeMap.set(key, ex); continue; }
+      toCreate.push({ label, code: nextUniqueSizeCode(label, usedCodes) });
+    }
+    for (const part of chunk(toCreate, CATALOG_INSERT_CHUNK)) {
+      const created = await prisma.size.createManyAndReturn({ data: part, select: { id: true, label: true } });
+      for (const s of created) sizeMap.set(s.label.toLowerCase(), s.id);
+    }
   }
-  newSizesCreated = sizeMap.size;
+  const newSizesCreated = sizeMap.size;
 
-  // 1c. Categories
-  const categoryMap = new Map<string, string>();
-  const pendingCategories = new Map<string, string>();
+  // ── 1c. Categories — read once; generate unique slugs in memory (same algorithm) ──
+  const pendingCategories = new Map<string, string>(); // lowercase -> name
   for (const row of input.rows) {
     if (row.categoryIsNew && row.raw.shelf_category && !row.categoryId)
       pendingCategories.set(row.raw.shelf_category.toLowerCase(), row.raw.shelf_category);
   }
-  for (const [key, name] of pendingCategories) {
-    const ex = await prisma.category.findFirst({ where: { name: { equals: name, mode: "insensitive" } } });
-    if (ex) { categoryMap.set(key, ex.id); continue; }
-    const slug = await uniqueCategorySlug(
-      name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, ""),
-    );
-    categoryMap.set(key, (await prisma.category.create({ data: { name, slug } })).id);
+  const categoryMap = new Map<string, string>();
+  if (pendingCategories.size > 0) {
+    const existing = await prisma.category.findMany({ select: { id: true, name: true, slug: true } });
+    const byName = new Map(existing.map((c) => [c.name.toLowerCase(), c.id]));
+    const usedSlugs = new Set(existing.map((c) => c.slug));
+    const toCreate: { name: string; slug: string }[] = [];
+    for (const [key, name] of pendingCategories) {
+      const ex = byName.get(key);
+      if (ex) { categoryMap.set(key, ex); continue; }
+      const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+      toCreate.push({ name, slug: nextUniqueCategorySlug(base, usedSlugs) });
+    }
+    for (const part of chunk(toCreate, CATALOG_INSERT_CHUNK)) {
+      const created = await prisma.category.createManyAndReturn({ data: part, select: { id: true, name: true } });
+      for (const c of created) categoryMap.set(c.name.toLowerCase(), c.id);
+    }
   }
-  newCategoriesCreated = categoryMap.size;
+  const newCategoriesCreated = categoryMap.size;
 
-  // 1d. Products + variants
-  const productMap = new Map<string, string>();
-
+  // ── 1d(i). Existing SKUs (receive_only) — refresh Excel-controlled price/threshold fields ──
+  // Same rule as before (resolveVariantMasterUpdate): blank/0 keeps the existing value; GST and
+  // product-level fields untouched. Never creates a variant.
   for (const row of input.rows) {
+    if (row.action !== "receive_only" || !row.variantId) continue;
+    const data = resolveVariantMasterUpdate(row.raw);
+    if (Object.keys(data).length > 0) {
+      await prisma.productVariant.update({ where: { id: row.variantId }, data });
+      variantsUpdated++;
+    }
+  }
+
+  // ── 1d(ii). New products — dedupe by name (first row wins), unique slugs in memory ──
+  const productMap = new Map<string, string>(); // nameKey -> id
+  const usedProductSlugs = new Set(
+    (await prisma.product.findMany({ select: { slug: true } })).map((p) => p.slug),
+  );
+  const productsToCreate: {
+    name: string; slug: string; brand: string | null;
+    kind: ProductKind; gender: ProductGender; categoryId: string;
+  }[] = [];
+  const seenProductNames = new Set<string>();
+  for (const row of input.rows) {
+    if (row.action !== "create_product_and_variant") continue;
     const r = row.raw;
+    const nameKey = r.product_name.toLowerCase();
+    if (seenProductNames.has(nameKey)) continue;
+    seenProductNames.add(nameKey);
     const resolvedCategory =
       row.categoryId ?? (r.shelf_category ? categoryMap.get(r.shelf_category.toLowerCase()) : undefined);
-    const resolvedColor = row.colorId ?? (r.color ? colorMap.get(r.color.toLowerCase()) : undefined);
-    const resolvedSize  = row.sizeId  ?? (r.size  ? sizeMap.get(r.size.toLowerCase())   : undefined);
-
-    if (row.action === "receive_only") {
-      // Existing SKU → keep the SAME variant (no duplicate) and refresh only the Excel-controlled
-      // price/threshold fields (see resolveVariantMasterUpdate for the exact rules). GST and
-      // product-level fields are intentionally left untouched (approved scope).
-      if (row.variantId) {
-        const data = resolveVariantMasterUpdate(r);
-        if (Object.keys(data).length > 0) {
-          await prisma.productVariant.update({ where: { id: row.variantId }, data });
-          variantsUpdated++;
-        }
-      }
-      continue;
-    }
-
-    let productId = row.productId;
-
-    if (row.action === "create_product_and_variant") {
-      const nameKey = r.product_name.toLowerCase();
-      if (productMap.has(nameKey)) {
-        productId = productMap.get(nameKey)!;
-      } else {
-        const base = r.product_name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-        const slug = await uniqueSlug(base);
-        const p = await prisma.product.create({
-          data: {
-            name: r.product_name, slug,
-            brand: r.brand || null,
-            kind: r.kind as ProductKind,
-            gender: r.gender as ProductGender,
-            categoryId: resolvedCategory!,
-          },
-        });
-        productId = p.id;
-        productMap.set(nameKey, p.id);
-        newProductsCreated++;
-      }
-    }
-
-    if (!productId) throw new Error(`Row ${row.rowNum}: no product ID resolved`);
-
-    // Nested create: variant + inventoryBalance in one atomic implicit transaction
-    await prisma.productVariant.create({
-      data: {
-        productId, sku: r.sku,
-        listPrice: new Prisma.Decimal(r.list_price),
-        costPrice: r.cost_price > 0 ? new Prisma.Decimal(r.cost_price) : null,
-        gstEnabled: true,
-        gstPricingMode: r.gst_inclusive ? GstPricingMode.INCLUSIVE : GstPricingMode.EXCLUSIVE,
-        cgstRate: new Prisma.Decimal(r.cgst_pct),
-        sgstRate: new Prisma.Decimal(r.sgst_pct),
-        igstRate: new Prisma.Decimal(r.igst_pct),
-        lowStockThreshold:
-          r.low_stock_threshold != null ? Math.max(0, Math.floor(r.low_stock_threshold)) : null,
-        colorId: resolvedColor ?? null,
-        sizeId:  resolvedSize  ?? null,
-        inventory: { create: { quantity: 0 } },
-      },
+    const base = r.product_name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    productsToCreate.push({
+      name: r.product_name,
+      slug: nextUniqueSlug(base, usedProductSlugs),
+      brand: r.brand || null,
+      kind: r.kind as ProductKind,
+      gender: r.gender as ProductGender,
+      categoryId: resolvedCategory!,
     });
-    newVariantsCreated++;
+  }
+  for (const part of chunk(productsToCreate, CATALOG_INSERT_CHUNK)) {
+    const created = await prisma.product.createManyAndReturn({ data: part, select: { id: true, name: true } });
+    for (const p of created) productMap.set(p.name.toLowerCase(), p.id);
+  }
+  const newProductsCreated = productsToCreate.length;
+
+  // ── 1d(iii). New variants — one bulk insert, then a bulk insert of their balance rows ──
+  const variantData: Prisma.ProductVariantCreateManyInput[] = [];
+  for (const row of input.rows) {
+    if (row.action === "receive_only") continue;
+    const r = row.raw;
+    const productId =
+      row.action === "create_product_and_variant"
+        ? productMap.get(r.product_name.toLowerCase())
+        : row.productId;
+    if (!productId) throw new Error(`Row ${row.rowNum}: no product ID resolved`);
+    const resolvedColor = row.colorId ?? (r.color ? colorMap.get(r.color.toLowerCase()) : undefined);
+    const resolvedSize = row.sizeId ?? (r.size ? sizeMap.get(r.size.toLowerCase()) : undefined);
+    variantData.push({
+      productId,
+      sku: r.sku,
+      listPrice: new Prisma.Decimal(r.list_price),
+      costPrice: r.cost_price > 0 ? new Prisma.Decimal(r.cost_price) : null,
+      gstEnabled: true,
+      gstPricingMode: r.gst_inclusive ? GstPricingMode.INCLUSIVE : GstPricingMode.EXCLUSIVE,
+      cgstRate: new Prisma.Decimal(r.cgst_pct),
+      sgstRate: new Prisma.Decimal(r.sgst_pct),
+      igstRate: new Prisma.Decimal(r.igst_pct),
+      lowStockThreshold:
+        r.low_stock_threshold != null ? Math.max(0, Math.floor(r.low_stock_threshold)) : null,
+      colorId: resolvedColor ?? null,
+      sizeId: resolvedSize ?? null,
+    });
+  }
+  let newVariantsCreated = 0;
+  // ~13 columns/variant → 1000 rows ≈ 13k params, safely under 65535.
+  for (const part of chunk(variantData, CATALOG_INSERT_CHUNK)) {
+    const created = await prisma.productVariant.createManyAndReturn({ data: part, select: { id: true } });
+    // Every created variant gets its inventory-balance row (was a nested create before).
+    await prisma.inventoryBalance.createMany({
+      data: created.map((v) => ({ variantId: v.id, quantity: 0 })),
+    });
+    newVariantsCreated += created.length;
   }
 
   return {

@@ -388,6 +388,10 @@ model PurchaseOrderItem {
   lineTotal         Decimal  @default(0) @map("line_total") @db.Decimal(14, 4)
   /// Per-unit pre-tax cost (for WAC / COGS); equals line taxable / qty.
   unitCostExclusive Decimal  @map("unit_cost_exclusive") @db.Decimal(14, 6)
+  /// MASTER-DATA INSTRUCTION ONLY: the new shelf price (MRP) to write to
+  /// ProductVariant.listPrice when this line is RECEIVED. Null/0 = leave the shelf price
+  /// unchanged. Takes NO part in any purchase total, GST figure, WAC, COGS or cash calculation.
+  mrpAtReceive      Decimal? @map("mrp_at_receive") @db.Decimal(14, 2)
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
 

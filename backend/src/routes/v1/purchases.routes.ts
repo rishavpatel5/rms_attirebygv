@@ -57,6 +57,11 @@ purchasesRouter.post(
   asyncHandler((req, res) => purchaseController.saveAndReceive(req, res)),
 );
 purchasesRouter.get(
+  "/variant-cost/:variantId",
+  ...read,
+  asyncHandler((req, res) => purchaseController.variantCost(req, res)),
+);
+purchasesRouter.get(
   "/:id",
   ...read,
   asyncHandler((req, res) => purchaseController.get(req, res)),
